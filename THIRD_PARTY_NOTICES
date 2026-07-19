@@ -1,0 +1,49 @@
+Kineto third-party notices
+===========================
+
+whisper.cpp / ggml
+------------------
+Source: https://github.com/ggml-org/whisper.cpp
+Pinned commit: f049fff95a089aa9969deb009cdd4892b3e74916
+Artifact: Binaries/CWhisper.xcframework
+License: MIT
+
+Copyright (c) 2023-2025 The ggml authors
+Copyright (c) 2022-2025 Georgi Gerganov
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Whisper large-v3-turbo q5_0 model
+---------------------------------
+Origin: https://huggingface.co/ggerganov/whisper.cpp
+Pinned repository revision: 5359861c739e955e79d9a303bcbc70fb988958b1
+File: ggml-large-v3-turbo-q5_0.bin
+SHA-256: 394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2
+Recorded license: MIT
+
+The model artifact is distributed by the whisper.cpp project and is subject to
+the MIT terms reproduced above. The application verifies the exact recorded
+size and digest before activation.
+
+Apple platform frameworks
+-------------------------
+Kineto links Apple system frameworks including SwiftUI, AppKit,
+ScreenCaptureKit, AVFoundation, Translation, Foundation Models, CryptoKit,
+and Security. These frameworks are supplied by macOS and are not redistributed
+in this repository.

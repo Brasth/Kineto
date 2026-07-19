@@ -1,0 +1,700 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kineto — Dark Broadcast Studio Wireframes</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --page: #e8ebe9;
+      --page-ink: #25302d;
+      --window: #f7f8f7;
+      --sidebar: #eef1ef;
+      --surface: #ffffff;
+      --surface-raised: #fbfcfb;
+      --ink: #17201e;
+      --muted: #687470;
+      --faint: #8d9894;
+      --line: #d9dfdc;
+      --line-strong: #c5ceca;
+      --signal: #087f73;
+      --signal-soft: #dff2ee;
+      --signal-ink: #075f57;
+      --on-signal: #ffffff;
+      --amber: #a35d00;
+      --amber-soft: #fff0d6;
+      --danger: #b42318;
+      --danger-soft: #fee9e7;
+      --selection: #dbe9e5;
+      --shadow: 0 24px 70px rgba(25, 40, 35, .20), 0 2px 8px rgba(25, 40, 35, .12);
+      --radius-window: 14px;
+      --radius-card: 10px;
+      --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+      --mono: "SFMono-Regular", ui-monospace, Menlo, monospace;
+    }
+
+    html[data-theme="dark"] {
+      --page: #090d0c;
+      --page-ink: #dce8e4;
+      --window: #101614;
+      --sidebar: #141c19;
+      --surface: #19221f;
+      --surface-raised: #171f1d;
+      --ink: #f2f8f6;
+      --muted: #a4b2ad;
+      --faint: #74837e;
+      --line: #293632;
+      --line-strong: #3d4e48;
+      --signal: #56e3d0;
+      --signal-soft: #123d35;
+      --signal-ink: #89f3e3;
+      --on-signal: #08211d;
+      --amber: #ffc466;
+      --amber-soft: #493619;
+      --danger: #ff9189;
+      --danger-soft: #4d2825;
+      --selection: #213b35;
+      --shadow: 0 34px 90px rgba(0, 0, 0, .62), 0 2px 10px rgba(0, 0, 0, .36);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      html[data-theme="system"] {
+        --page: #090d0c;
+        --page-ink: #dce8e4;
+        --window: #101614;
+        --sidebar: #141c19;
+        --surface: #19221f;
+        --surface-raised: #171f1d;
+        --ink: #f2f8f6;
+        --muted: #a4b2ad;
+        --faint: #74837e;
+        --line: #293632;
+        --line-strong: #3d4e48;
+        --signal: #56e3d0;
+        --signal-soft: #123d35;
+        --signal-ink: #89f3e3;
+        --on-signal: #08211d;
+        --amber: #ffc466;
+        --amber-soft: #493619;
+        --danger: #ff9189;
+        --danger-soft: #4d2825;
+        --selection: #213b35;
+        --shadow: 0 34px 90px rgba(0, 0, 0, .62), 0 2px 10px rgba(0, 0, 0, .36);
+      }
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      padding: 24px;
+      background:
+        radial-gradient(circle at 18% 5%, color-mix(in srgb, var(--signal) 8%, transparent), transparent 26rem),
+        var(--page);
+      color: var(--page-ink);
+      font-family: var(--font);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button, input, select { font: inherit; }
+    button { color: inherit; }
+    button:focus-visible, input:focus-visible, select:focus-visible {
+      outline: 3px solid color-mix(in srgb, var(--signal) 45%, transparent);
+      outline-offset: 2px;
+    }
+
+    .prototype-bar {
+      max-width: 1280px;
+      margin: 0 auto 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .prototype-title { display: flex; align-items: baseline; gap: 10px; }
+    .prototype-title strong { font-size: 14px; letter-spacing: -.01em; }
+    .prototype-title span { color: var(--muted); font-size: 12px; }
+    .prototype-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .segmented {
+      display: inline-flex;
+      padding: 3px;
+      border: 1px solid color-mix(in srgb, var(--line-strong) 80%, transparent);
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--surface) 72%, transparent);
+    }
+    .segmented button {
+      border: 0;
+      border-radius: 5px;
+      padding: 6px 11px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .segmented button[aria-pressed="true"] {
+      background: var(--surface);
+      color: var(--ink);
+      box-shadow: 0 1px 3px rgba(0,0,0,.12);
+    }
+    .theme-button {
+      min-width: 34px;
+      height: 30px;
+      border: 1px solid var(--line-strong);
+      border-radius: 7px;
+      background: var(--surface);
+      cursor: pointer;
+    }
+
+    .window {
+      width: min(1280px, 100%);
+      height: min(820px, calc(100vh - 96px));
+      min-height: 650px;
+      margin: 0 auto;
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: 52px 1fr;
+      border: 1px solid color-mix(in srgb, var(--line-strong) 86%, transparent);
+      border-radius: var(--radius-window);
+      background: var(--window);
+      box-shadow: var(--shadow);
+    }
+
+    .titlebar {
+      display: grid;
+      grid-template-columns: 180px 1fr 180px;
+      align-items: center;
+      border-bottom: 1px solid var(--line);
+      background: color-mix(in srgb, var(--window) 92%, transparent);
+      padding: 0 16px;
+      user-select: none;
+    }
+    .traffic { display: flex; gap: 8px; }
+    .traffic i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+    .traffic i:nth-child(1) { background: #ff5f57; }
+    .traffic i:nth-child(2) { background: #febc2e; }
+    .traffic i:nth-child(3) { background: #28c840; }
+    .window-title { text-align: center; font-weight: 600; font-size: 13px; color: var(--ink); }
+    .title-tools { justify-self: end; display: flex; align-items: center; gap: 8px; }
+    .privacy-pill {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 5px 9px; border: 1px solid var(--line); border-radius: 999px;
+      color: var(--muted); font-size: 11px; background: var(--surface);
+    }
+    .privacy-pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--signal); }
+
+    .workspace { min-height: 0; display: grid; grid-template-columns: 248px 1fr; }
+    .window[data-current-screen="live"] .workspace,
+    .window[data-current-screen="processing"] .workspace,
+    .window[data-current-screen="model"] .workspace { grid-template-columns: 1fr; }
+    .window[data-current-screen="live"] .sidebar,
+    .window[data-current-screen="processing"] .sidebar,
+    .window[data-current-screen="model"] .sidebar { display: none; }
+    .window[data-current-screen="live"] .main {
+      background:
+        radial-gradient(ellipse at 50% 110%, color-mix(in srgb, var(--signal) 9%, transparent), transparent 42%),
+        repeating-linear-gradient(90deg, transparent 0 47px, color-mix(in srgb, var(--signal) 2.5%, transparent) 48px),
+        var(--window);
+    }
+    .sidebar {
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--line);
+      background: var(--sidebar);
+      padding: 14px 12px;
+    }
+    .primary-button {
+      min-height: 36px;
+      border: 0;
+      border-radius: 8px;
+      background: var(--signal);
+      color: var(--on-signal);
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+      box-shadow: 0 1px 2px color-mix(in srgb, var(--signal) 40%, transparent);
+    }
+    .primary-button:hover { filter: brightness(.96); }
+    .primary-button:active { transform: translateY(1px); }
+    .section-label {
+      margin: 22px 9px 8px;
+      color: var(--faint);
+      font-weight: 600;
+      font-size: 10px;
+      letter-spacing: .07em;
+      text-transform: uppercase;
+    }
+    .sidebar-list { display: grid; gap: 3px; }
+    .sidebar-item {
+      width: 100%;
+      min-height: 40px;
+      border: 0;
+      border-radius: 7px;
+      background: transparent;
+      text-align: left;
+      padding: 7px 9px;
+      cursor: pointer;
+    }
+    .sidebar-item:hover { background: color-mix(in srgb, var(--selection) 55%, transparent); }
+    .sidebar-item.selected { background: var(--selection); }
+    .sidebar-item strong, .sidebar-item span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sidebar-item strong { color: var(--ink); font-size: 12px; font-weight: 550; }
+    .sidebar-item span { color: var(--muted); font-size: 10px; margin-top: 2px; }
+    .sidebar-bottom { margin-top: auto; border-top: 1px solid var(--line); padding-top: 10px; }
+    .sidebar-link {
+      width: 100%; border: 0; background: transparent; color: var(--muted);
+      text-align: left; padding: 8px 9px; border-radius: 7px; cursor: pointer; font-size: 12px;
+    }
+    .sidebar-link:hover { color: var(--ink); background: var(--selection); }
+
+    .main { min-width: 0; min-height: 0; position: relative; background: var(--window); }
+    .screen { display: none; height: 100%; min-height: 0; }
+    .screen.active { display: flex; flex-direction: column; }
+
+    .content-header {
+      min-height: 68px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 13px 24px;
+      border-bottom: 1px solid var(--line);
+    }
+    .content-heading h1 { margin: 0; color: var(--ink); font-size: 19px; letter-spacing: -.02em; }
+    .content-heading p { margin: 3px 0 0; color: var(--muted); font-size: 11px; }
+    .header-actions { display: flex; align-items: center; gap: 8px; }
+    .button {
+      min-height: 32px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 7px;
+      background: var(--surface); color: var(--ink); font-weight: 550; font-size: 12px; cursor: pointer;
+    }
+    .button:hover { background: var(--surface-raised); border-color: var(--faint); }
+    .button.signal { border-color: var(--signal); background: var(--signal); color: var(--on-signal); }
+    .button.danger { color: var(--danger); }
+    .icon-button { width: 32px; padding: 0; font-size: 16px; }
+
+    .preflight-body {
+      flex: 1; min-height: 0; overflow: auto;
+      display: grid; place-items: center; padding: 28px;
+    }
+    .preflight-card { width: min(660px, 100%); }
+    .eyebrow { color: var(--signal-ink); font-size: 11px; font-weight: 650; letter-spacing: .03em; }
+    .preflight-card h2 { margin: 8px 0 6px; color: var(--ink); font-size: 28px; letter-spacing: -.035em; }
+    .lead { margin: 0 0 22px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .setup-list {
+      overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface);
+    }
+    .setup-row {
+      display: grid; grid-template-columns: 32px 1fr auto; align-items: center; gap: 11px;
+      min-height: 62px; padding: 10px 13px; border-bottom: 1px solid var(--line);
+    }
+    .setup-row:last-child { border-bottom: 0; }
+    .setup-icon {
+      width: 28px; height: 28px; display: grid; place-items: center;
+      border-radius: 7px; background: var(--signal-soft); color: var(--signal-ink); font-size: 13px; font-weight: 700;
+    }
+    .setup-copy strong { display: block; color: var(--ink); font-size: 12px; font-weight: 600; }
+    .setup-copy span { display: block; color: var(--muted); font-size: 10px; margin-top: 3px; }
+    .state { display: inline-flex; align-items: center; gap: 6px; color: var(--signal-ink); font-size: 10px; font-weight: 600; }
+    .state::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    .state.waiting { color: var(--amber); }
+    .ready-banner {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 11px 13px; border: 1px solid color-mix(in srgb, var(--signal) 32%, var(--line));
+      border-radius: var(--radius-card); background: color-mix(in srgb, var(--signal-soft) 55%, var(--surface));
+      color: var(--signal-ink); font-size: 11px; font-weight: 600;
+    }
+    .ready-banner small { color: var(--muted); font-weight: 400; }
+    .source-card {
+      margin-top: 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+    }
+    .source-option {
+      padding: 13px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--surface);
+    }
+    .source-option label { display: block; color: var(--muted); font-size: 10px; margin-bottom: 7px; }
+    .source-value { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .source-value strong { color: var(--ink); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .preflight-footer { margin-top: 18px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .consent { max-width: 430px; color: var(--muted); font-size: 10px; line-height: 1.45; }
+    .consent { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
+    .consent input { margin-top: 2px; accent-color: var(--signal); }
+    .button:disabled { cursor: not-allowed; opacity: .45; filter: saturate(.35); }
+
+    .live-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 296px; }
+    .transcript-pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+    .signal-rail {
+      min-height: 42px; padding: 0 20px; display: flex; align-items: center; gap: 0;
+      border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--signal-soft) 42%, var(--window));
+    }
+    .signal-step { display: flex; align-items: center; color: var(--muted); font-size: 10px; font-weight: 550; }
+    .signal-step:not(:last-child)::after { content: ""; width: 42px; height: 1px; margin: 0 8px; background: var(--line-strong); }
+    .signal-step.active { color: var(--signal-ink); }
+    .signal-dot { width: 7px; height: 7px; margin-right: 6px; border: 1px solid currentColor; border-radius: 50%; }
+    .signal-step.active .signal-dot { background: currentColor; box-shadow: 0 0 0 3px color-mix(in srgb, var(--signal) 14%, transparent); }
+    .transcript-scroll { flex: 1; min-height: 0; overflow: auto; padding: 22px 28px 80px; }
+    .transcript-list { width: min(740px, 100%); margin: 0 auto; display: grid; gap: 20px; }
+    .utterance { display: grid; grid-template-columns: 74px 1fr; gap: 18px; }
+    .utterance-meta { padding-top: 3px; color: var(--faint); font-family: var(--mono); font-size: 9px; text-align: right; }
+    .speaker { display: block; margin-bottom: 5px; color: var(--ink); font-size: 11px; font-weight: 650; }
+    .original { margin: 0; color: var(--ink); font-size: 14px; line-height: 1.55; }
+    .translation {
+      margin: 7px 0 0; padding-left: 12px; border-left: 2px solid var(--signal);
+      color: var(--muted); font-size: 12px; line-height: 1.5;
+    }
+    .language-tag { margin-left: 6px; color: var(--signal-ink); font-size: 9px; font-weight: 650; }
+    .volatile { opacity: .56; }
+    .volatile .original::after { content: ""; display: inline-block; width: 5px; height: 13px; margin-left: 3px; vertical-align: -2px; background: var(--signal); animation: blink 1s steps(1) infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
+    .live-controls {
+      position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%);
+      display: flex; align-items: center; gap: 8px; padding: 6px;
+      border: 1px solid var(--line-strong); border-radius: 10px; background: color-mix(in srgb, var(--surface) 94%, transparent);
+      box-shadow: 0 10px 30px rgba(20, 30, 27, .18);
+      backdrop-filter: blur(18px);
+    }
+    .timer { min-width: 70px; padding: 0 8px; color: var(--ink); font: 11px var(--mono); font-variant-numeric: tabular-nums; }
+    .record-mark { display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: #e13c32; }
+
+    .inspector { min-height: 0; overflow: auto; border-left: 1px solid var(--line); background: var(--surface-raised); padding: 18px; }
+    .inspector h3 { margin: 0 0 14px; color: var(--ink); font-size: 12px; }
+    .meter { display: grid; grid-template-columns: 64px 1fr; align-items: center; gap: 10px; margin-bottom: 12px; }
+    .meter label { color: var(--muted); font-size: 10px; }
+    .meter-track { height: 5px; border-radius: 999px; background: var(--line); overflow: hidden; }
+    .meter-fill { height: 100%; border-radius: inherit; background: var(--signal); }
+    .info-block { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
+    .info-row { display: flex; justify-content: space-between; gap: 14px; margin: 8px 0; color: var(--muted); font-size: 10px; }
+    .info-row strong { color: var(--ink); font-weight: 550; text-align: right; }
+    .retention-note { margin-top: 18px; padding: 10px; border-radius: 8px; background: var(--signal-soft); color: var(--signal-ink); font-size: 10px; line-height: 1.45; }
+
+    .summary-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 320px; }
+    .summary-scroll { min-height: 0; overflow: auto; padding: 26px 30px; }
+    .summary-document { width: min(720px, 100%); margin: 0 auto; }
+    .summary-document h2 { margin: 0 0 8px; color: var(--ink); font-size: 25px; letter-spacing: -.035em; }
+    .summary-meta { display: flex; gap: 14px; color: var(--muted); font-size: 10px; margin-bottom: 24px; }
+    .summary-section { padding: 20px 0; border-top: 1px solid var(--line); }
+    .summary-section h3 { margin: 0 0 11px; color: var(--ink); font-size: 12px; letter-spacing: -.01em; }
+    .summary-section p { margin: 0; color: var(--ink); font-size: 13px; line-height: 1.62; }
+    .decision-list { display: grid; gap: 10px; }
+    .decision {
+      display: grid; grid-template-columns: 20px 1fr auto; gap: 10px; align-items: start;
+      padding: 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface);
+    }
+    .decision-mark { width: 17px; height: 17px; display: grid; place-items: center; border-radius: 5px; background: var(--signal-soft); color: var(--signal-ink); font-size: 10px; font-weight: 700; }
+    .decision strong { display: block; color: var(--ink); font-size: 11px; line-height: 1.4; }
+    .decision span { display: block; color: var(--muted); font-size: 9px; margin-top: 3px; }
+    .evidence-button { border: 0; background: transparent; color: var(--signal-ink); font-size: 9px; cursor: pointer; }
+    .evidence-pane { min-height: 0; overflow: auto; border-left: 1px solid var(--line); background: var(--surface-raised); padding: 20px; }
+    .evidence-pane h3 { margin: 0; color: var(--ink); font-size: 12px; }
+    .evidence-pane > p { color: var(--muted); font-size: 10px; line-height: 1.45; }
+    .quote { margin-top: 16px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+    .quote-time { color: var(--signal-ink); font: 9px var(--mono); }
+    .quote p { margin: 7px 0 0; color: var(--ink); font-size: 11px; line-height: 1.5; }
+
+    .model-body { flex: 1; min-height: 0; overflow: auto; display: grid; place-items: center; padding: 30px; }
+    .model-card { width: min(600px, 100%); padding: 24px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+    .model-illustration {
+      width: 52px; height: 52px; display: grid; place-items: center; margin-bottom: 18px;
+      border-radius: 12px; background: var(--signal-soft); color: var(--signal-ink); font-weight: 750; letter-spacing: -.03em;
+    }
+    .model-card h2 { margin: 0; color: var(--ink); font-size: 21px; }
+    .model-card > p { margin: 8px 0 20px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .model-facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 20px; }
+    .fact { padding: 10px; border-radius: 8px; background: var(--surface-raised); border: 1px solid var(--line); }
+    .fact span { display: block; color: var(--faint); font-size: 9px; }
+    .fact strong { display: block; color: var(--ink); font-size: 11px; margin-top: 3px; }
+    .progress { height: 7px; overflow: hidden; border-radius: 999px; background: var(--line); }
+    .progress span { display: block; width: 68%; height: 100%; border-radius: inherit; background: var(--signal); }
+    .progress-copy { display: flex; justify-content: space-between; margin: 7px 0 18px; color: var(--muted); font: 9px var(--mono); }
+    .model-actions { display: flex; justify-content: flex-end; gap: 8px; }
+    .processing-body { flex: 1; min-height: 0; display: grid; place-items: center; padding: 30px; }
+    .processing-card { width: min(560px, 100%); text-align: center; }
+    .processing-orbit {
+      width: 74px; height: 74px; margin: 0 auto 22px; position: relative;
+      border: 1px solid var(--line-strong); border-radius: 50%;
+      box-shadow: inset 0 0 28px color-mix(in srgb, var(--signal) 8%, transparent);
+    }
+    .processing-orbit::before {
+      content: ""; position: absolute; inset: 8px; border: 2px solid transparent;
+      border-top-color: var(--signal); border-right-color: color-mix(in srgb, var(--signal) 35%, transparent);
+      border-radius: 50%; animation: spin 1.2s linear infinite;
+    }
+    .processing-orbit::after { content: ""; position: absolute; inset: 31px; border-radius: 50%; background: var(--signal); box-shadow: 0 0 18px var(--signal); }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .processing-card h2 { margin: 0; color: var(--ink); font-size: 24px; letter-spacing: -.03em; }
+    .processing-card > p { max-width: 430px; margin: 9px auto 22px; color: var(--muted); font-size: 12px; line-height: 1.55; }
+    .processing-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0 0 22px; text-align: left; }
+    .processing-step { padding: 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+    .processing-step span { display: block; color: var(--faint); font-size: 9px; }
+    .processing-step strong { display: block; margin-top: 4px; color: var(--ink); font-size: 11px; }
+    .processing-step.active { border-color: color-mix(in srgb, var(--signal) 45%, var(--line)); }
+    .processing-actions { display: flex; justify-content: center; gap: 8px; }
+
+    .badge { display: inline-flex; align-items: center; min-height: 22px; padding: 0 8px; border-radius: 999px; background: var(--signal-soft); color: var(--signal-ink); font-size: 9px; font-weight: 650; }
+    .muted-badge { background: var(--surface-raised); color: var(--muted); border: 1px solid var(--line); }
+
+    @media (max-width: 920px) {
+      body { padding: 12px; }
+      .prototype-bar { align-items: flex-start; flex-direction: column; }
+      .window { height: calc(100vh - 122px); min-height: 600px; }
+      .workspace { grid-template-columns: 190px 1fr; }
+      .live-layout, .summary-layout { grid-template-columns: 1fr; }
+      .inspector, .evidence-pane { display: none; }
+      .source-card { grid-template-columns: 1fr; }
+      .titlebar { grid-template-columns: 100px 1fr 100px; }
+      .privacy-pill span { display: none; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
+    }
+  </style>
+</head>
+<body>
+  <header class="prototype-bar">
+    <div class="prototype-title">
+      <strong>Kineto — Dark Broadcast Studio</strong>
+      <span>Interactive native macOS wireframe · contextual setup + focus mode</span>
+    </div>
+    <div class="prototype-actions">
+      <nav class="segmented" aria-label="Wireframe screen">
+        <button data-screen="model" aria-pressed="false">Blocked setup</button>
+        <button data-screen="preflight" aria-pressed="true">Home</button>
+        <button data-screen="live" aria-pressed="false">Live meeting</button>
+        <button data-screen="processing" aria-pressed="false">Processing</button>
+        <button data-screen="summary" aria-pressed="false">Summary</button>
+      </nav>
+      <button class="theme-button" id="themeButton" aria-label="Color theme: dark. Activate to change." title="Theme: dark">●</button>
+    </div>
+  </header>
+
+  <main class="window" data-current-screen="preflight" aria-label="Kineto application wireframe">
+    <header class="titlebar">
+      <div class="traffic" aria-hidden="true"><i></i><i></i><i></i></div>
+      <div class="window-title">Kineto</div>
+      <div class="title-tools"><div class="privacy-pill"><span>Local processing</span></div></div>
+    </header>
+
+    <div class="workspace">
+      <aside class="sidebar">
+        <button class="primary-button" data-go="preflight">New Meeting</button>
+        <div class="section-label">Today</div>
+        <div class="sidebar-list">
+          <button class="sidebar-item selected" data-go="summary">
+            <strong>Product weekly</strong><span>10:00 · 42 min · English + Vietnamese</span>
+          </button>
+          <button class="sidebar-item">
+            <strong>Customer discovery</strong><span>08:30 · 28 min · Vietnamese</span>
+          </button>
+        </div>
+        <div class="section-label">Yesterday</div>
+        <div class="sidebar-list">
+          <button class="sidebar-item"><strong>Design review</strong><span>15:00 · 51 min · English</span></button>
+        </div>
+        <div class="sidebar-bottom">
+          <button class="sidebar-link" data-go="model">Model &amp; Language</button>
+          <button class="sidebar-link">Privacy &amp; Storage</button>
+        </div>
+      </aside>
+
+      <section class="main">
+        <article class="screen" id="screen-model" aria-labelledby="model-title">
+          <header class="content-header">
+            <div class="content-heading"><h1 id="model-title">Transcription unavailable</h1><p>Kineto opens setup only when a required local capability is blocked.</p></div>
+            <span class="badge">Action required</span>
+          </header>
+          <div class="model-body">
+            <div class="model-card">
+              <div class="model-illustration" aria-hidden="true">K</div>
+              <h2>Finish the local model download</h2>
+              <p>The previous download was interrupted. Kineto will resume, verify the exact size and SHA-256, then activate the weights atomically. Meeting content is never uploaded.</p>
+              <div class="model-facts">
+                <div class="fact"><span>Download</span><strong>547 MB</strong></div>
+                <div class="fact"><span>Languages</span><strong>English + Vietnamese</strong></div>
+                <div class="fact"><span>Processing</span><strong>On this Mac</strong></div>
+              </div>
+              <div class="progress" aria-label="Download progress 68 percent"><span></span></div>
+              <div class="progress-copy"><span>372 MB of 547 MB · interrupted</span><span>68%</span></div>
+              <div class="model-actions"><button class="button" data-go="preflight">Not now</button><button class="button signal" data-go="preflight">Retry download</button></div>
+            </div>
+          </div>
+        </article>
+
+        <article class="screen active" id="screen-preflight" aria-labelledby="preflight-title">
+          <header class="content-header">
+            <div class="content-heading"><h1 id="preflight-title">Meetings</h1><p>Start locally. Resolve setup only when something is unavailable.</p></div>
+            <span class="badge muted-badge">Ready · no cloud connection</span>
+          </header>
+          <div class="preflight-body">
+            <div class="preflight-card">
+              <span class="eyebrow">Ready now</span>
+              <h2>Start a local meeting</h2>
+              <p class="lead">Choose what to capture. Kineto asks for setup only when a permission, model, or language asset is missing.</p>
+              <div class="ready-banner"><span>All local capabilities ready</span><small>Screen audio · Microphone · EN ↔ VI</small></div>
+              <div class="source-card">
+                <div class="source-option">
+                  <label>Effective audio boundary</label>
+                  <div class="source-value"><strong>Selected application · Zoom</strong><button class="button">Change…</button></div>
+                </div>
+                <div class="source-option">
+                  <label>Summary language</label>
+                  <div class="source-value"><strong>English</strong><button class="button">Change…</button></div>
+                </div>
+              </div>
+              <div class="preflight-footer">
+                <label class="consent"><input id="consentCheck" type="checkbox"><span>I confirm that I informed participants. External capture does not activate Zoom, Meet, or Teams recording indicators. Raw audio is off.</span></label>
+                <button class="button signal" id="startMeeting" data-go="live" disabled>Start Meeting</button>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="screen" id="screen-live" aria-labelledby="live-title">
+          <header class="content-header">
+            <div class="content-heading"><h1 id="live-title">Product weekly</h1><p><span class="record-mark"></span>Recording · Selected application: Zoom + Microphone</p></div>
+            <div class="header-actions"><span class="badge">Local · app-wide audio</span><button class="button">Add marker</button></div>
+          </header>
+          <div class="live-layout">
+            <div class="transcript-pane">
+              <div class="signal-rail" aria-label="Processing pipeline status">
+                <div class="signal-step active"><i class="signal-dot"></i>Capture</div>
+                <div class="signal-step active"><i class="signal-dot"></i>Transcribe</div>
+                <div class="signal-step active"><i class="signal-dot"></i>Translate</div>
+                <div class="signal-step"><i class="signal-dot"></i>Summarize after stop</div>
+              </div>
+              <div class="transcript-scroll">
+                <div class="transcript-list">
+                  <div class="utterance">
+                    <div class="utterance-meta">00:12:08</div>
+                    <div><span class="speaker">Selected Source <span class="language-tag">EN</span></span><p class="original">We should keep the first release local and prove the transcription quality before adding provider integrations.</p><p class="translation" lang="vi">Chúng ta nên giữ bản phát hành đầu tiên chạy cục bộ và chứng minh chất lượng phiên âm trước khi thêm tích hợp nhà cung cấp.</p></div>
+                  </div>
+                  <div class="utterance">
+                    <div class="utterance-meta">00:12:21</div>
+                    <div><span class="speaker">You <span class="language-tag">VI</span></span><p class="original" lang="vi">Đồng ý. Mình sẽ đo trên máy 8 GB trước, đặc biệt là khi Zoom đang chạy.</p><p class="translation">Agreed. I’ll measure on an 8 GB Mac first, especially while Zoom is running.</p></div>
+                  </div>
+                  <div class="utterance">
+                    <div class="utterance-meta">00:12:36</div>
+                    <div><span class="speaker">Selected Source <span class="language-tag">EN</span></span><p class="original">Then the go or no-go decision is based on latency, memory, and bilingual accuracy—not a demo on the fastest machine.</p></div>
+                  </div>
+                  <div class="utterance volatile">
+                    <div class="utterance-meta">00:12:51</div>
+                    <div><span class="speaker">You <span class="language-tag">VI</span></span><p class="original" lang="vi">Và mỗi quyết định trong phần tóm tắt phải liên kết lại với đoạn hội thoại gốc</p></div>
+                  </div>
+                </div>
+              </div>
+              <div class="live-controls" aria-label="Recording controls">
+                <div class="timer"><span class="record-mark"></span>00:12:54</div>
+                <button class="button">Pause</button>
+                <button class="button danger" data-go="processing">Stop</button>
+                <button class="button danger">Stop &amp; Delete…</button>
+              </div>
+            </div>
+            <aside class="inspector">
+              <h3>Capture health</h3>
+              <div class="meter"><label>Selected Source</label><div class="meter-track"><div class="meter-fill" style="width:74%"></div></div></div>
+              <div class="meter"><label>You</label><div class="meter-track"><div class="meter-fill" style="width:48%"></div></div></div>
+              <div class="info-block">
+                <div class="info-row"><span>Audio boundary</span><strong>Zoom application</strong></div>
+                <div class="info-row"><span>Translation</span><strong>EN ↔ VI</strong></div>
+                <div class="info-row"><span>Backlog</span><strong>1.2 sec</strong></div>
+                <div class="info-row"><span>Memory pressure</span><strong>Normal</strong></div>
+              </div>
+              <div class="retention-note"><strong>Raw audio is off.</strong><br>Only encrypted transcript, translation, summary, and evidence links will be saved.</div>
+            </aside>
+          </div>
+        </article>
+
+        <article class="screen" id="screen-processing" aria-labelledby="processing-title">
+          <header class="content-header">
+            <div class="content-heading"><h1 id="processing-title">Product weekly</h1><p>Capture stopped · source transcript is safely stored</p></div>
+            <span class="badge">Processing on this Mac</span>
+          </header>
+          <div class="processing-body">
+            <div class="processing-card">
+              <div class="processing-orbit" aria-hidden="true"></div>
+              <h2>Building the meeting record</h2>
+              <p>Kineto is finalizing translations, generating a bounded summary, and validating every decision and action against source segment IDs.</p>
+              <div class="processing-steps">
+                <div class="processing-step"><span>Transcript</span><strong>Finalized</strong></div>
+                <div class="processing-step"><span>Translation</span><strong>Finalized</strong></div>
+                <div class="processing-step active"><span>Summary</span><strong>Validating evidence…</strong></div>
+              </div>
+              <div class="processing-actions"><button class="button">Cancel summary</button><button class="button signal" data-go="summary">Preview completed state</button></div>
+            </div>
+          </div>
+        </article>
+
+        <article class="screen" id="screen-summary" aria-labelledby="summary-title">
+          <header class="content-header">
+            <div class="content-heading"><h1 id="summary-title">Product weekly</h1><p>Completed today at 10:42 · 42 min · English + Vietnamese</p></div>
+            <div class="header-actions"><button class="button">Export…</button><button class="button icon-button" aria-label="More actions">•••</button></div>
+          </header>
+          <div class="summary-layout">
+            <div class="summary-scroll">
+              <div class="summary-document">
+                <span class="eyebrow">Evidence-linked summary</span>
+                <h2>Local-first release scope confirmed</h2>
+                <div class="summary-meta"><span>English summary</span><span>9 source segments</span><span>Generated on this Mac</span></div>
+                <section class="summary-section">
+                  <h3>Overview</h3>
+                  <p>The team agreed to validate a local English/Vietnamese meeting workflow before adding cloud providers. The release decision depends on real 8 GB performance while a meeting client is active, not isolated model benchmarks.</p>
+                </section>
+                <section class="summary-section">
+                  <h3>Decisions</h3>
+                  <div class="decision-list">
+                    <div class="decision"><div class="decision-mark">D</div><div><strong>Ship one local ASR path after the Apple-versus-Whisper bakeoff.</strong><span>No permanent dual-engine architecture.</span></div><button class="evidence-button">2 sources</button></div>
+                    <div class="decision"><div class="decision-mark">D</div><div><strong>Keep all summaries linked to original transcript evidence.</strong><span>Derived text never replaces finalized source segments.</span></div><button class="evidence-button">3 sources</button></div>
+                  </div>
+                </section>
+                <section class="summary-section">
+                  <h3>Action items</h3>
+                  <div class="decision-list">
+                    <div class="decision"><div class="decision-mark">A</div><div><strong>Run the bilingual benchmark on the lowest supported Mac.</strong><span>Owner and due date were not stated.</span></div><button class="evidence-button">1 source</button></div>
+                  </div>
+                </section>
+              </div>
+            </div>
+            <aside class="evidence-pane">
+              <h3>Source evidence</h3>
+              <p>Select a decision or action to inspect the original transcript. Machine translations are always labeled.</p>
+              <div class="quote"><span class="quote-time">00:12:08 · Selected Source · EN</span><p>“We should keep the first release local and prove the transcription quality before adding provider integrations.”</p></div>
+              <div class="quote"><span class="quote-time">00:12:21 · You · VI</span><p lang="vi">“Đồng ý. Mình sẽ đo trên máy 8 GB trước, đặc biệt là khi Zoom đang chạy.”</p></div>
+            </aside>
+          </div>
+        </article>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const screenButtons = [...document.querySelectorAll('[data-screen]')];
+    const routeButtons = [...document.querySelectorAll('[data-go]')];
+    const screens = [...document.querySelectorAll('.screen')];
+
+    function showScreen(name) {
+      screens.forEach(screen => screen.classList.toggle('active', screen.id === `screen-${name}`));
+      screenButtons.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.screen === name)));
+      document.querySelector('.window').setAttribute('data-current-screen', name);
+    }
+
+    screenButtons.forEach(button => button.addEventListener('click', () => showScreen(button.dataset.screen)));
+    routeButtons.forEach(button => button.addEventListener('click', () => showScreen(button.dataset.go)));
+
+    const consentCheck = document.getElementById('consentCheck');
+    const startMeeting = document.getElementById('startMeeting');
+    consentCheck.addEventListener('change', () => {
+      startMeeting.disabled = !consentCheck.checked;
+    });
+
+    const themes = ['system', 'light', 'dark'];
+    const themeButton = document.getElementById('themeButton');
+    themeButton.addEventListener('click', () => {
+      const current = document.documentElement.dataset.theme;
+      const next = themes[(themes.indexOf(current) + 1) % themes.length];
+      document.documentElement.dataset.theme = next;
+      themeButton.title = `Theme: ${next}`;
+      themeButton.setAttribute('aria-label', `Color theme: ${next}. Activate to change.`);
+      themeButton.textContent = next === 'light' ? '☀' : next === 'dark' ? '●' : '◐';
+    });
+  </script>
+</body>
+</html>

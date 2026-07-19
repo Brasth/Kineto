@@ -1,0 +1,196 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		100000000000000000000030 /* KinetoApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000010 /* KinetoApp.swift */; };
+		100000000000000000000031 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000011 /* AppModel.swift */; };
+		100000000000000000000032 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000012 /* HomeView.swift */; };
+		100000000000000000000033 /* KinetoCore in Frameworks */ = {isa = PBXBuildFile; productRef = 100000000000000000000081 /* KinetoCore */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		100000000000000000000010 /* KinetoApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/KinetoApp.swift; sourceTree = "<group>"; };
+		100000000000000000000011 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/AppModel.swift; sourceTree = "<group>"; };
+		100000000000000000000012 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UI/Home/HomeView.swift; sourceTree = "<group>"; };
+		100000000000000000000013 /* Kineto.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Kineto.entitlements; sourceTree = "<group>"; };
+		100000000000000000000014 /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Base.xcconfig; sourceTree = "<group>"; };
+		100000000000000000000015 /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
+		100000000000000000000016 /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
+		100000000000000000000020 /* Kineto.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Kineto.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		100000000000000000000041 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (100000000000000000000033 /* KinetoCore in Frameworks */,);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		100000000000000000000002 = {
+			isa = PBXGroup;
+			children = (
+				100000000000000000000004 /* KinetoApp */,
+				100000000000000000000005 /* Config */,
+				100000000000000000000003 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		100000000000000000000003 /* Products */ = {
+			isa = PBXGroup;
+			children = (100000000000000000000020 /* Kineto.app */,);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		100000000000000000000004 /* KinetoApp */ = {
+			isa = PBXGroup;
+			children = (
+				100000000000000000000010 /* KinetoApp.swift */,
+				100000000000000000000011 /* AppModel.swift */,
+				100000000000000000000012 /* HomeView.swift */,
+				100000000000000000000013 /* Kineto.entitlements */,
+			);
+			path = KinetoApp;
+			sourceTree = "<group>";
+		};
+		100000000000000000000005 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				100000000000000000000014 /* Base.xcconfig */,
+				100000000000000000000015 /* Debug.xcconfig */,
+				100000000000000000000016 /* Release.xcconfig */,
+			);
+			path = Config;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		100000000000000000000050 /* Kineto */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 100000000000000000000071 /* Build configuration list for PBXNativeTarget "Kineto" */;
+			buildPhases = (
+				100000000000000000000040 /* Sources */,
+				100000000000000000000041 /* Frameworks */,
+				100000000000000000000042 /* Resources */,
+			);
+			buildRules = ();
+			dependencies = ();
+			name = Kineto;
+			packageProductDependencies = (100000000000000000000081 /* KinetoCore */,);
+			productName = Kineto;
+			productReference = 100000000000000000000020 /* Kineto.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		100000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2660;
+				LastUpgradeCheck = 2660;
+				TargetAttributes = {100000000000000000000050 = {CreatedOnToolsVersion = 26.6;};};
+			};
+			buildConfigurationList = 100000000000000000000070 /* Build configuration list for PBXProject "Kineto" */;
+			compatibilityVersion = "Xcode 16.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (en, Base,);
+			mainGroup = 100000000000000000000002;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (100000000000000000000080 /* XCLocalSwiftPackageReference "KinetoCore" */,);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 100000000000000000000003 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (100000000000000000000050 /* Kineto */,);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		100000000000000000000042 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0;};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		100000000000000000000040 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				100000000000000000000030 /* KinetoApp.swift in Sources */,
+				100000000000000000000031 /* AppModel.swift in Sources */,
+				100000000000000000000032 /* HomeView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		100000000000000000000060 /* Debug */ = {isa = XCBuildConfiguration; baseConfigurationReference = 100000000000000000000015 /* Debug.xcconfig */; buildSettings = {CLANG_ENABLE_OBJC_ARC = YES;}; name = Debug;};
+		100000000000000000000061 /* Release */ = {isa = XCBuildConfiguration; baseConfigurationReference = 100000000000000000000016 /* Release.xcconfig */; buildSettings = {CLANG_ENABLE_OBJC_ARC = YES;}; name = Release;};
+		100000000000000000000062 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 100000000000000000000015 /* Debug.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = KinetoApp/Kineto.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Kineto;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Kineto uses the microphone only when you include your voice in a meeting transcript.";
+				INFOPLIST_KEY_NSScreenCaptureUsageDescription = "Kineto captures audio from the app or display you explicitly select.";
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.huynguyen.Kineto;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Debug;
+		};
+		100000000000000000000063 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 100000000000000000000016 /* Release.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = KinetoApp/Kineto.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Kineto;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Kineto uses the microphone only when you include your voice in a meeting transcript.";
+				INFOPLIST_KEY_NSScreenCaptureUsageDescription = "Kineto captures audio from the app or display you explicitly select.";
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.huynguyen.Kineto;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		100000000000000000000070 /* Build configuration list for PBXProject "Kineto" */ = {isa = XCConfigurationList; buildConfigurations = (100000000000000000000060 /* Debug */, 100000000000000000000061 /* Release */,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;};
+		100000000000000000000071 /* Build configuration list for PBXNativeTarget "Kineto" */ = {isa = XCConfigurationList; buildConfigurations = (100000000000000000000062 /* Debug */, 100000000000000000000063 /* Release */,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		100000000000000000000080 /* XCLocalSwiftPackageReference "KinetoCore" */ = {isa = XCLocalSwiftPackageReference; relativePath = Packages/KinetoCore;};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		100000000000000000000081 /* KinetoCore */ = {isa = XCSwiftPackageProductDependency; package = 100000000000000000000080 /* XCLocalSwiftPackageReference "KinetoCore" */; productName = KinetoCore;};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 100000000000000000000001 /* Project object */;
+}

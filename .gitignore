@@ -1,0 +1,9 @@
+.DS_Store
+.build/
+DerivedData/
+Binaries/*.xcframework/
+Models/*.bin
+Models/*.part
+*.xcarchive
+*.dSYM/
+.agentkit/
