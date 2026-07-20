@@ -14,16 +14,18 @@ The approved plan and its seven phase files still carry `status: pending`, and t
 | Phase | Implemented result | Repository evidence | Acceptance state |
 |---|---|---|---|
 | 1. Toolchain and scaffold | Checked-in Xcode app, local Swift package, macOS 26.1/arm64/Swift 6 settings, sandbox entitlement without network access | `Kineto.xcodeproj`, `Config/`, `KinetoApp/Kineto.entitlements`, `Package.swift` | **Debug app build and launch smoke passed; signed Release gate open** |
-| 2. Domain and secure storage | Authenticated generation store; Keychain authority; staged creation; deletion tombstones; terminal source ledger; reopen/export/delete | `Domain/`, `Storage/`, `MeetingPackageStoreTests` | **Core contracts pass; fault-injection and locked-Keychain device trials open** |
+| 2. Domain and secure storage | Authenticated encrypted generation store; Keychain authority; staged creation; deletion tombstones; terminal source ledger; generic meeting-lifecycle deletion and recovery | `Domain/`, `Storage/`, `MeetingPackageStoreTests` | **Core storage tests passed: 43 tests, 0 failures; fault-injection and locked-Keychain device trials open** |
 | 3. Model delivery and ASR | Pinned whisper.cpp recognizer; exact model and native archive/header/metadata verification; crash-safe immutable activation | `ASR/`, `ModelDelivery/`, `Binaries/CWhisper.xcframework`, tests/scripts | **Runtime and artifact verifier pass; worst-device gate open** |
 | 4. Capture and live transcript | Owned callback buffers, optional mic, monotonic timestamps, bounded per-source inference queues, interval gaps, final-tail drain/cancellation | `Capture/`, `Audio/`, `TranscriptCoordinator`, tests | **Source contracts pass; real platform/TCC trials open** |
 | 5. Translation and summary | Preflight EN↔VI asset preparation; nonblocking tracked translation; post-stop extractive Foundation Models summary with field isolation | `TranslationService`, `SummaryService`, `EvidenceValidator` | **Local EN↔VI shell trial passed; clean-account/framework-device matrix open** |
-| 6. Native app experience | Full library, preflight, picker, independent mic fallback, interruption recovery, truthful processing, evidence spans, export/delete | `AppModel`, `KinetoApp`, `HomeView` | **Build and UI launch/preflight smoke passed; accessibility/platform matrix open** |
+| 6. Native app experience | Full library, preflight, picker, independent mic fallback, interruption recovery, truthful processing, evidence spans, export/delete, and linked nonactivating caption and companion panels with one persisted caption anchor and derived companion placement. Coordinator-owned `FloatingCaptionDragSession` suppresses only the caption surface during a held companion drag while its panel/frame and linked geometry stay alive, defers to the latest presentation and restores it immediately on drag end; a separately initiated header drag keeps the caption surface visible when no companion drag is held, and pause/stop/processing hides the overlay and resets the session. The caption uses a 576 pt default width, 68 pt content minimum, and 14 pt vertical padding. | `AppModel`, `KinetoApp`, `HomeView`, `FloatingCaptionView` | **Full macOS Xcode suite passed: 15 tests, 0 failures; Debug app launch smoke passed. Physical-Mac companion-drag suppression/restoration, header fallback/reset, multi-display, accessibility, Reduce Motion, nonactivation, fullscreen meeting-app, and screen-share trials remain open** |
 | 7. Verification and release | Hardened Release config, Developer ID export, exact artifact gate, DMG notarization acceptance/stapling/Gatekeeper script | `Config/`, `scripts/`, deployment guide | **Unsigned local gates pass; credentialed exact-DMG proof open** |
 
 ## Evidence already represented in tests
 
-The Swift Testing suite currently contains 14 passing contracts across seven test files:
+The core storage suite passed 43 tests with 0 failures. The final full Kineto macOS XCTest suite passed 40 tests with 0 failures. The Debug app launched and stayed running for smoke verification. These results cover local storage contracts and application startup; they do not establish real-device overlay interaction or platform behavior.
+
+Covered local contracts include:
 
 - Product name and minimum-system-version contract.
 - 48 kHz stereo to mono 16 kHz audio normalization.
@@ -31,14 +33,14 @@ The Swift Testing suite currently contains 14 passing contracts across seven tes
 - Whisper silence/brief-noise rejection and sustained-audio admission.
 - Encrypted meeting creation/reopen with finalized records only.
 - AES-GCM mutation rejection and key-first tombstoned deletion outcome.
-- Meeting listing and atomic plaintext export shape.
+- Meeting listing and atomic plaintext transcript export shape.
 - Stopped-meeting rejection of late source and translation records.
 - Keychain-authoritative generation rollback defense.
 - Interrupted deletion tombstone recovery.
 - Extractive summary evidence acceptance and unsupported owner/date rejection.
 - Model exact-size/hash activation, mutation rejection, and same-revision repair.
 
-Observed local evidence also includes the arm64 Debug app build, a system-picker trial showing non-Kineto windows/displays, a warmed Start Meeting transition measured at 0.598 seconds, live selected-source YouTube transcription with EN→VI translation, local Whisper inference and silence-hallucination probes, Foundation Models capability gating, and the strengthened model/XCFramework provenance script. These do not replace clean-account, real-meeting-platform, accessibility, worst-device, or signed-release trials.
+Visible-pet drag, its active-drag caption-surface suppression with retained linked geometry, immediate restoration of the latest presentation on drag end, the header-drag fallback that remains visible when initiated outside a companion drag, accessible menu reset, hidden-pet noninteraction, multi-display placement clamp/restore, VoiceOver/menu accessibility, Reduce Motion, nonactivation, fullscreen meeting-app behavior, and overlay screen-share visibility have not been trialed on physical Macs. The pet has no independent window, geometry, placement persistence, capture data, or transcript data. These remain release gates and must not be inferred from the passing tests or Debug launch.
 
 ## Known implementation/evidence gaps before external release testing
 
@@ -49,7 +51,8 @@ These are repository closure items, separate from credentials, counsel, and real
 3. **Keep retained audio out of claims or implement it fully.** The current app always sets `retainsAudio: false` and has no encrypted audio sink.
 4. **Complete real capture saturation and topology trials.** Exercise stop under load, source loss, pause/resume, lock/sleep/wake, TCC denial/revocation, and Zoom/Meet/Teams topology changes.
 5. **Complete Apple language-framework trials.** Test clean-account Translation asset installation/cancellation and Foundation Models EN/VI availability, output, cancellation, and unavailable fallback.
-6. **Inspect final signed bytes.** Record built entitlements, Hardened Runtime, archive contents, privacy strings, notices, exact digests, and absence of meeting-sensitive diagnostics.
+6. **Complete physical-Mac linked-overlay trials.** Verify that dragging the visible pet maps through the same persisted caption anchor as header dragging; while the companion pointer drag is held, verify caption-surface suppression while the caption panel/frame and linked geometry remain alive, then immediate restoration of the latest deferred presentation on drag end. Separately, verify that a header-initiated drag outside any held companion drag keeps the caption surface visible, and that pause, stop, or processing hides the overlay and resets the transient drag session. Also verify accessible menu reset to the current-display deterministic fallback with cleared per-display placement, no hidden-pet interaction, per-display clamp/restore, VoiceOver/menu accessibility, Reduce Motion, nonactivation, fullscreen Zoom/Meet/Teams, and normal overlay visibility in screen sharing outside the held companion drag. The caption body must remain actionless.
+7. **Inspect final signed bytes.** Record built entitlements, Hardened Runtime, archive contents, privacy strings, notices, exact digests, and absence of meeting-sensitive diagnostics.
 
 ## Remaining external release gates
 
@@ -78,6 +81,7 @@ Required evidence on macOS 26.1+:
 - First grant/relaunch, denial, revocation, lock, sleep/wake, pause/resume, stop during utterance, stop under saturation, crash/relaunch, and interrupted processing.
 - Visible gap behavior with proof that recognition does not join speech across missing PCM.
 - Confirmation that external capture does not claim or trigger platform recording indicators.
+- On physical Macs, verify visible-pet dragging through the one persisted caption anchor; during the held companion drag, verify caption-surface suppression with the caption panel/frame and linked geometry retained, then immediate latest-presentation restoration on end. Separately verify the visible header-drag fallback outside any held companion drag, where the caption surface stays visible; verify terminal pause/stop/processing session reset, accessible menu reset, hidden-pet noninteraction, per-display persisted/clamped placement and reset, VoiceOver/menu accessibility, Reduce Motion, nonactivation, fullscreen meeting-app behavior, and normal overlay visibility during screen sharing outside the held companion drag; these are all currently unperformed.
 
 **Exit:** Actual behavior matches the UI disclosure and no platform-specific limitation is hidden.
 
@@ -140,9 +144,10 @@ Required evidence:
 
 | Gate | Current status | Evidence owner/input | Release blocker |
 |---|---|---|---|
-| Repository build and deterministic tests | 12 contracts pass; arm64 Debug and Release builds recorded locally | Engineering + full Xcode 26.6 environment | No |
+| Repository build and deterministic tests | Core storage: 43 tests passed, 0 failures; final full Kineto macOS XCTest suite: 40 tests passed, 0 failures; Debug app launch smoke passed | Engineering | No |
 | Worst-device 8/16 GB benchmarks | Not run/recorded | Hardware lab / target Macs | Yes |
 | Zoom/Meet/Teams and TCC trials | Not run/recorded | QA on real Macs/accounts | Yes |
+| Linked overlay: companion-drag caption-surface suppression/latest-presentation restoration, separately initiated visible header drag with its caption surface visible outside a held companion drag, terminal pause/stop/processing session reset, menu reset, hidden-pet noninteraction, multi-display clamp/restore, VoiceOver/menu accessibility, Reduce Motion, nonactivation, fullscreen meeting-app, and screen-share behavior outside held companion drag | Not run/recorded on physical Macs | QA with multiple displays, VoiceOver, fullscreen Zoom/Meet/Teams, and screen-share target | Yes |
 | Translation/Foundation Models availability | Not run/recorded | QA on clean provisioned Macs | Yes |
 | Privacy/security review and canary logs | Not run/recorded | Security/release engineering | Yes |
 | Launch-market counsel and approved copy | Not supplied | Counsel/product | Yes |

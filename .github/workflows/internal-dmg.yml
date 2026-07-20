@@ -1,0 +1,119 @@
+name: Internal unsigned DMG
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: read
+
+jobs:
+  build-unsigned-internal-dmg:
+    name: Build unsigned internal DMG
+    runs-on: macos-26
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      BUILD_ROOT: build/internal
+      CURRENT_PROJECT_VERSION: '1'
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Assert runner, Xcode, SDK, and Node
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          [[ "$(uname -s)" == "Darwin" ]] || { echo 'Expected a macOS runner' >&2; exit 1; }
+          [[ "$(uname -m)" == "arm64" ]] || { echo 'Expected an arm64 runner' >&2; exit 1; }
+
+          XCODE_VERSION="$(xcodebuild -version | awk '/^Xcode / { print $2; exit }')"
+          [[ -n "$XCODE_VERSION" ]] || { echo 'Unable to determine Xcode version' >&2; exit 1; }
+          xcodebuild -version
+          XCODE_PATH="$(xcode-select -p)"
+          [[ -d "$XCODE_PATH" ]] || { echo "Xcode developer directory is missing: $XCODE_PATH" >&2; exit 1; }
+
+          SDK_VERSION="$(xcrun --sdk macosx --show-sdk-version)"
+          SDK_PATH="$(xcrun --sdk macosx --show-sdk-path)"
+          [[ -n "$SDK_VERSION" && -d "$SDK_PATH" ]] || { echo 'macOS SDK is unavailable' >&2; exit 1; }
+          printf 'macOS SDK %s (%s)\n' "$SDK_VERSION" "$SDK_PATH"
+
+          NODE_VERSION="$(node --version)"
+          [[ "$NODE_VERSION" =~ ^v20([.]|$) ]] || { echo "Expected Node 20, got $NODE_VERSION" >&2; exit 1; }
+          node --version
+          npm --version
+
+      - name: Install create-dmg 8.1.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --global --no-fund --no-audit create-dmg@8.1.0
+          node -e 'const { execFileSync } = require("node:child_process"); const data = JSON.parse(execFileSync("npm", ["list", "--global", "create-dmg", "--depth=0", "--json"], { encoding: "utf8" })); const v = data.dependencies?.["create-dmg"]?.version; if (v !== "8.1.0") { throw new Error(`Expected create-dmg 8.1.0, got ${v ?? "missing"}`); } console.log(`create-dmg ${v}`);'
+
+      - name: Derive internal artifact metadata
+        id: metadata
+        shell: bash
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$REF_TYPE" == 'tag' ]]; then
+            [[ "$REF_NAME" =~ ^v[0-9]+[.][0-9]+[.][0-9]+$ ]] || {
+              echo "Unexpected release tag: $REF_NAME" >&2
+              exit 1
+            }
+            MARKETING_VERSION="${REF_NAME#v}"
+            CHANNEL='unsigned-internal-tag'
+          elif [[ "$REF_NAME" == 'main' ]]; then
+            MARKETING_VERSION='0.1.0'
+            CHANNEL='unsigned-internal-main'
+          else
+            echo "Unsupported ref: $REF_NAME" >&2
+            exit 1
+          fi
+
+          SHORT_SHA="${COMMIT_SHA:0:7}"
+          DMG_NAME="Kineto-${MARKETING_VERSION}-${CHANNEL}-${SHORT_SHA}.dmg"
+          {
+            printf 'marketing_version=%s\n' "$MARKETING_VERSION"
+            printf 'channel=%s\n' "$CHANNEL"
+            printf 'short_sha=%s\n' "$SHORT_SHA"
+            printf 'dmg_name=%s\n' "$DMG_NAME"
+          } >> "$GITHUB_OUTPUT"
+          printf 'Building %s\n' "$DMG_NAME"
+
+      - name: Build unsigned internal DMG
+        shell: bash
+        env:
+          MARKETING_VERSION: ${{ steps.metadata.outputs.marketing_version }}
+          CHANNEL: ${{ steps.metadata.outputs.channel }}
+          DMG_NAME: ${{ steps.metadata.outputs.dmg_name }}
+        run: |
+          set -euo pipefail
+          ./scripts/build-internal-dmg.sh
+          test -f "$BUILD_ROOT/$DMG_NAME"
+          test -f "$BUILD_ROOT/$DMG_NAME.sha256"
+
+      - name: Upload unsigned internal artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kineto-unsigned-internal-${{ steps.metadata.outputs.channel }}-${{ steps.metadata.outputs.short_sha }}
+          path: |
+            build/internal/${{ steps.metadata.outputs.dmg_name }}
+            build/internal/${{ steps.metadata.outputs.dmg_name }}.sha256
+          if-no-files-found: error
+          retention-days: 14

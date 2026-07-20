@@ -77,6 +77,14 @@ Open **System Settings → Privacy & Security** and review:
 
 If macOS asks for an app restart after granting permission, quit Kineto completely and launch it again. Never bypass the system source picker; the picker is the authoritative capture boundary.
 
+## Configure Pet Mode
+
+Pet Mode is optional and off by default. Open **Kineto Settings → Floating companion** to enable it and choose one of the five built-in themes: **Signal Cat**, **Orbit Fox**, **Beacon Frog**, **Night Owl**, or **Meadow Rabbit**. The same section controls companion size, motion, and its leaf accent.
+
+These preferences are stored globally as a versioned Codable snapshot. If a stored field is missing or invalid, Kineto falls back for that field without discarding valid values from the other fields. Accent colors are normalized to opaque canonical sRGB values; if the color picker cannot be converted, Kineto retains the previous valid accent.
+
+The companion appears only inside the existing floating caption overlay during active capture. It has no independent placement, window, focus, or content interaction; drag the companion to move the linked overlay.
+
 ## Start a meeting
 
 1. Open the meeting application or browser window that will supply audio.
@@ -89,6 +97,7 @@ If macOS asks for an app restart after granting permission, quit Kineto complete
 8. Enable the post-meeting summary if desired and choose English or Vietnamese.
 9. Confirm that participants were informed and acknowledge the displayed capture boundary.
 10. Select **Start Meeting**.
+After a successful **Start Meeting**, Kineto enters floating mode: it reversibly orders the identified main-window group out of view without closing it or stopping capture, while the linked floating caption/pet pair remains visible during active capture.
 
 Application capture may include every audible window from that application. Display capture may include all audio associated with that display. Kineto does not claim browser-tab isolation or meeting-platform participant identity.
 
@@ -96,10 +105,16 @@ Application capture may include every audible window from that application. Disp
 
 - **Selected Source** represents captured application or display audio.
 - **You** represents the optional microphone.
+- During active capture, Kineto's floating mode keeps the main window hidden and shows a floating, nonactivating caption overlay with its linked companion. Its compact controls may include **Pause**, **Stop & Process**, and **Show Meeting Details**, depending on the current capture state. **Show Meeting Details** returns the existing live meeting window to view and hides the floating pair; it does not open a new screen or a second panel. The controls are separate from the header move handle, and caption text itself has no actions. The visible companion is the primary move affordance when Pet Mode is enabled: drag it to move the linked overlay. While you hold that companion, the caption surface and controls are temporarily suppressed and unavailable even though its panel/frame remains linked, and they return immediately when you release. Drag the header as the accessible fallback; unlike a companion drag, a header-initiated drag keeps the caption surface visible. The caption area shows no more than four newest-first source-first rows: live captions take precedence, then finalized history; every row leads with the original caption, and a translation appears only beneath the finalized source segment it belongs to.
+- **Pause**, **Stop & Process**, source loss, processing, and other non-capturing states return the main meeting window to view and hide the floating caption/pet pair. This is reversible window hiding, not a destructive close; hiding the main window does not stop capture. **Pause** suspends capture, while **Stop & Process** ends capture and begins processing. The pair may be visible in screenshots or screen sharing, so do not rely on it being concealed.
+- **Pet Mode** is optional and off by default. If you enable it, the selected original pixel-art theme—Signal Cat, Orbit Fox, Beacon Frog, Night Owl, or Meadow Rabbit—appears only inside this existing caption overlay while capture is active; it is decorative except for its move affordance, not an AI assistant or a separate pet window.
+- Pet Mode receives only the non-content `FloatingCaptionPetState` enum. It cannot inspect, reveal, retain, log, or react to caption/transcript text, translations, audio, speaker identity, source application/window identity, or sentiment; it creates no independent work and, aside from dragging it to move the linked overlay, accepts neither focus nor content interaction. It shares the overlay's normal screenshot and screen-share visibility.
+- Pet Mode has at most one non-looping transform/opacity transition of 200 ms or less and remains static when Reduce Motion is enabled.
+- The capture and paused menu-bar status remains generic and content-free; it does not display caption text, source identity, or capture content. It keeps **Resume** available while paused and can reveal the existing live meeting window.
 - Finalized English and Vietnamese segments are translated locally when translation is enabled.
 - A visible transcript gap means audio could not be safely processed; Kineto does not fabricate text across missing audio.
-- Use **Pause** and **Resume** to suspend and continue capture.
-- Use **Stop** to finish capture, drain finalized transcription, seal the source meeting, and generate the optional summary.
+- Use **Pause** to suspend capture; the main window returns and the floating pair hides. Use **Resume** in the live meeting window or menu bar to continue capture; **Resume** leaves the main window shown. While active capture is available, select **Use Floating Captions** in the live meeting window to explicitly hide the main window again and re-enter floating mode. This action exists only in that live meeting surface.
+- Use **Stop & Process** to finish capture, drain finalized transcription, seal the source meeting, and generate the optional summary. **Delete…** remains a separate confirmed action and does not share the floating overlay control.
 
 ## Review, export, and delete
 
@@ -108,8 +123,8 @@ Completed meetings appear in the meeting library.
 - Select a meeting to reopen its transcript and summary. Use **Summary** for the generated evidence-linked review or **Ask** for a dedicated grounded conversation view; chat is unavailable during capture and processing. The question field supports up to 1,500 characters: **Return** adds a line; **Command-Return** or **Send** submits it. Questions and saved answers stay on this Mac in the encrypted meeting package.
 - Grounded chat answers link exact source excerpts. If Kineto cannot find relevant final transcript support, or the local model is unavailable, it displays an explicit no-answer rather than guessing.
 - Select an **Evidence** link to inspect the exact source segment supporting a summary item or chat answer.
-- **Export Plaintext…** creates a user-selected JSON copy, including saved chat turns. The exported copy is outside Kineto's encryption and deletion boundary.
-- **Delete…** removes Kineto's meeting keys before best-effort removal of encrypted package bytes and encrypted chat history. Plaintext exports must be deleted separately.
+- **Export Plaintext…** creates a user-selected JSON transcript copy, including saved chat turns. The exported copy is outside Kineto's encryption and deletion boundary.
+- **Delete…** removes Kineto's meeting keys before best-effort removal of encrypted package bytes and encrypted chat history. Plaintext transcript exports must be deleted separately.
 
 Raw audio retention is off in the current application workflow.
 

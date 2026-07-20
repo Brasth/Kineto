@@ -25,7 +25,13 @@ private final class ContentPickerObserver: NSObject, SCContentSharingPickerObser
     }
 }
 
+enum CapturePresentationMode: Sendable, Equatable {
+    case mainWindow
+    case floating
+}
+
 @MainActor
+
 @Observable
 final class AppModel {
     enum Screen: String, CaseIterable, Sendable {
@@ -36,6 +42,54 @@ final class AppModel {
         case summary
         case privacy
     }
+    private static let petSettingsKey = "kineto.petSettings"
+    private var isRestoringPetSettings = false
+
+    private struct PetSettingsSnapshot: Codable {
+        static let currentVersion = 1
+
+        let version: Int
+        let enabled: Bool?
+        let appearance: String?
+        let size: String?
+        let motion: String?
+        let accent: String?
+
+        private enum CodingKeys: String, CodingKey {
+            case version
+            case enabled
+            case appearance
+            case size
+            case motion
+            case accent
+        }
+
+        init(
+            version: Int = Self.currentVersion,
+            enabled: Bool,
+            appearance: FloatingCaptionPetAppearance,
+            size: FloatingCaptionPetSize,
+            motion: FloatingCaptionPetMotion,
+            accent: FloatingCaptionPetAccent
+        ) {
+            self.version = version
+            self.enabled = enabled
+            self.appearance = appearance.rawValue
+            self.size = size.rawValue
+            self.motion = motion.rawValue
+            self.accent = accent.storageValue
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            version = try container.decode(Int.self, forKey: .version)
+            enabled = try? container.decode(Bool.self, forKey: .enabled)
+            appearance = try? container.decode(String.self, forKey: .appearance)
+            size = try? container.decode(String.self, forKey: .size)
+            motion = try? container.decode(String.self, forKey: .motion)
+            accent = try? container.decode(String.self, forKey: .accent)
+        }
+    }
 
     private(set) var screen: Screen = .home
     private(set) var selectedTarget: CaptureTarget?
@@ -43,6 +97,16 @@ final class AppModel {
     private(set) var modelReady = false
     private(set) var isBusy = false
     private(set) var isPaused = false
+    private(set) var capturePresentationMode: CapturePresentationMode = .mainWindow
+    private var signalGatePhase: SignalGatePhase = .hidden {
+        didSet {
+            guard signalGatePhase == .capturing else {
+                capturePresentationMode = .mainWindow
+                return
+            }
+        }
+    }
+    private var isCaptureCommandInFlight = false
     private(set) var segments: [Segment] = []
     private(set) var translations: [TranslationRecord] = []
     private(set) var gaps: [TranscriptGap] = []
@@ -54,17 +118,42 @@ final class AppModel {
     private(set) var processingStatus = "Finalizing locally"
     private(set) var isGeneratingSummary = false
     private(set) var lastTranscriptLagSeconds: Double?
-    /// Latest L0 pipeline stage timings from the coordinator.
     private(set) var lastRecognitionTiming: RecognitionTiming?
     private(set) var savedMeetings: [MeetingSnapshot] = []
     private(set) var recoveryNotice: String?
-    /// Live partial captions (Apple Speech); never durable.
     private(set) var volatileTranscripts: [String: VolatileTranscript] = [:]
-    private(set) var appleSpeechStatus = AppleSpeechStatus(
-        isFrameworkAvailable: false,
-        locales: [],
-        notice: "Checking Apple Speech…"
-    )
+    private(set) var appleSpeechStatus = AppleSpeechStatus(isFrameworkAvailable: false, locales: [], notice: "Checking Apple Speech…")
+    /// Decorative floating-caption companion preference; disabled by default.
+    var petModeEnabled = false {
+        didSet {
+            guard !isRestoringPetSettings else { return }
+            persistPetSettings()
+        }
+    }
+    var petAppearance: FloatingCaptionPetAppearance = .signal {
+        didSet {
+            guard !isRestoringPetSettings else { return }
+            persistPetSettings()
+        }
+    }
+    var petSize: FloatingCaptionPetSize = .standard {
+        didSet {
+            guard !isRestoringPetSettings else { return }
+            persistPetSettings()
+        }
+    }
+    var petMotion: FloatingCaptionPetMotion = .subtle {
+        didSet {
+            guard !isRestoringPetSettings else { return }
+            persistPetSettings()
+        }
+    }
+    var petAccent = FloatingCaptionPetVisualPreferences.default.accent {
+        didSet {
+            guard !isRestoringPetSettings else { return }
+            persistPetSettings()
+        }
+    }
     /// Which engine is actually running this meeting (after fallback).
     private(set) var activeASREngine: ASREnginePreference = .appleSpeech
     private(set) var asrEngineNotice: String?
@@ -156,8 +245,78 @@ final class AppModel {
         {
             summaryTemplate = template
         }
+        restorePetSettings()
         configureContentSharingPicker()
     }
+
+    func selectPetTheme(_ theme: FloatingCaptionPetTheme) {
+        isRestoringPetSettings = true
+        petAppearance = theme.appearance
+        petAccent = theme.defaultAccent
+        isRestoringPetSettings = false
+        persistPetSettings()
+    }
+
+    private func restorePetSettings() {
+        let defaults = UserDefaults.standard
+        let defaultPreferences = FloatingCaptionPetVisualPreferences.default
+        let legacyEnabled = defaults.object(forKey: "kineto.petModeEnabled") as? Bool ?? false
+        let legacyAppearance = defaults.string(forKey: "kineto.petAppearance")
+            .flatMap(FloatingCaptionPetAppearance.init(rawValue:))
+            ?? defaultPreferences.appearance
+        let legacySize = defaults.string(forKey: "kineto.petSize")
+            .flatMap(FloatingCaptionPetSize.init(rawValue:))
+            ?? defaultPreferences.size
+        let legacyMotion = defaults.string(forKey: "kineto.petMotion")
+            .flatMap(FloatingCaptionPetMotion.init(rawValue:))
+            ?? defaultPreferences.motion
+        let legacyAccent = defaults.string(forKey: "kineto.petAccent")
+            .flatMap(FloatingCaptionPetAccent.init(storageValue:))
+            ?? defaultPreferences.accent
+        let rawSnapshotData = defaults.data(forKey: Self.petSettingsKey)
+        let snapshot = rawSnapshotData
+            .flatMap { try? JSONDecoder().decode(PetSettingsSnapshot.self, from: $0) }
+
+        isRestoringPetSettings = true
+        defer { isRestoringPetSettings = false }
+        if let snapshot, snapshot.version == PetSettingsSnapshot.currentVersion {
+            petModeEnabled = snapshot.enabled ?? legacyEnabled
+            petAppearance = snapshot.appearance
+                .flatMap(FloatingCaptionPetAppearance.init(rawValue:))
+                ?? legacyAppearance
+            petSize = snapshot.size
+                .flatMap(FloatingCaptionPetSize.init(rawValue:))
+                ?? legacySize
+            petMotion = snapshot.motion
+                .flatMap(FloatingCaptionPetMotion.init(rawValue:))
+                ?? legacyMotion
+            petAccent = snapshot.accent
+                .flatMap(FloatingCaptionPetAccent.init(storageValue:))
+                ?? legacyAccent
+        } else {
+            petModeEnabled = legacyEnabled
+            petAppearance = legacyAppearance
+            petSize = legacySize
+            petMotion = legacyMotion
+            petAccent = legacyAccent
+        }
+        if rawSnapshotData == nil || snapshot.map({ $0.version <= PetSettingsSnapshot.currentVersion }) == true {
+            persistPetSettings()
+        }
+    }
+
+    private func persistPetSettings() {
+        let snapshot = PetSettingsSnapshot(
+            enabled: petModeEnabled,
+            appearance: petAppearance,
+            size: petSize,
+            motion: petMotion,
+            accent: petAccent
+        )
+        guard let data = try? JSONEncoder().encode(snapshot) else { return }
+        UserDefaults.standard.set(data, forKey: Self.petSettingsKey)
+    }
+
 
     private func configureContentSharingPicker() {
         let picker = SCContentSharingPicker.shared
@@ -179,6 +338,9 @@ final class AppModel {
     func refreshCapabilities() async {
         await refreshMeetings()
         appleSpeechStatus = await appleSpeechCapability.status()
+        recognitionLanguagePreference = appleSpeechStatus.normalizedPreference(
+            recognitionLanguagePreference
+        )
         updateASREngineNotice()
 
         do {
@@ -352,7 +514,73 @@ final class AppModel {
         isChatAvailable(for: activeMeeting)
     }
 
+    var signalGatePresentation: SignalGatePresentation {
+        SignalGatePresentation(
+            phase: signalGatePhase,
+            isCaptureCommandInFlight: isCaptureCommandInFlight
+        )
+    }
+
+    var canEnterFloatingMode: Bool {
+        capturePresentationMode == .mainWindow
+            && screen == .live
+            && signalGatePhase == .capturing
+            && activeMeeting != nil
+    }
+
+    func enterFloatingMode() {
+        guard canEnterFloatingMode else { return }
+        capturePresentationMode = .floating
+    }
+
+    var floatingCaptionPetVisualPreferences: FloatingCaptionPetVisualPreferences {
+        FloatingCaptionPetVisualPreferences(
+            appearance: petAppearance,
+            size: petSize,
+            motion: petMotion,
+            accent: petAccent
+        )
+    }
+
+    var floatingCaptionOverlayPresentation: FloatingCaptionOverlayPresentation {
+        let gatePresentation = signalGatePresentation
+        guard gatePresentation.phase == .capturing,
+              capturePresentationMode == .floating else {
+            return .hidden
+        }
+
+        return FloatingCaptionOverlayPresentation(
+            caption: .live(
+                segments: segments,
+                translations: translations,
+                volatileTranscripts: Array(volatileTranscripts.values),
+                petModeEnabled: petModeEnabled
+            ),
+            petVisualPreferences: floatingCaptionPetVisualPreferences,
+            signalGatePresentation: gatePresentation
+        )
+    }
+
+    @discardableResult
+    func performSignalGateAction(_ action: SignalGateAction) async -> Bool {
+        guard signalGatePresentation.isActionAvailable(action) else { return false }
+
+        switch action {
+        case .pauseOrResume:
+            guard !isCaptureCommandInFlight else { return false }
+            await pauseOrResume()
+        case .stop:
+            guard !isCaptureCommandInFlight else { return false }
+            await stopMeeting()
+        case .showMeetingDetails:
+            capturePresentationMode = .mainWindow
+        }
+
+        return true
+    }
+
     func openMeeting(_ saved: MeetingSnapshot) async {
+        signalGatePhase = .hidden
         await cancelChat()
         do {
             if saved.meeting.state == .recording || saved.meeting.state == .paused {
@@ -389,6 +617,7 @@ final class AppModel {
         errorMessage = nil
     }
 
+
     func newMeeting() async {
         await cancelChat()
         resetMeetingView()
@@ -423,6 +652,8 @@ final class AppModel {
     }
 
     func startMeeting() async {
+        capturePresentationMode = .mainWindow
+        signalGatePhase = .hidden
         guard let selectedTarget, consentGranted else {
             errorMessage = "Select a source and confirm consent first."
             return
@@ -482,6 +713,7 @@ final class AppModel {
                     meetingID: meeting.id,
                     localeIdentifier: localeID,
                     language: SpokenLanguage(localeIdentifier: localeID),
+                    capability: appleSpeechCapability,
                     store: meetingStore
                 )
                 transcriptEvents = try await pipeline.start(events: captureEvents)
@@ -528,6 +760,8 @@ final class AppModel {
                 await self.captureStreamEndedUnexpectedly()
             }
             screen = .live
+            signalGatePhase = .capturing
+            enterFloatingMode()
         } catch {
             if let createdMeeting {
                 try? await capture.stop()
@@ -536,12 +770,18 @@ final class AppModel {
             await applePipeline?.cancel()
             applePipeline = nil
             coordinator = nil
+            capturePresentationMode = .mainWindow
+            signalGatePhase = .hidden
             errorMessage = "The meeting could not start. Review permissions, speech engine readiness, and the selected source."
         }
         isBusy = false
     }
 
     func pauseOrResume() async {
+        capturePresentationMode = .mainWindow
+        guard !isCaptureCommandInFlight else { return }
+        isCaptureCommandInFlight = true
+        defer { isCaptureCommandInFlight = false }
         guard let meeting = activeMeeting else { return }
         do {
             if isPaused {
@@ -549,26 +789,38 @@ final class AppModel {
                 do {
                     try await meetingStore.updateState(.recording, for: meeting.id)
                     isPaused = false
+                    signalGatePhase = .capturing
                 } catch {
                     do {
                         try await capture.pause()
                         isPaused = true
+                        signalGatePhase = .paused
                     } catch {
                         isPaused = false
+                        signalGatePhase = .capturing
                     }
                     throw error
                 }
             } else {
-                try await capture.pause()
+                signalGatePhase = .paused
+                do {
+                    try await capture.pause()
+                } catch {
+                    signalGatePhase = .capturing
+                    throw error
+                }
                 do {
                     try await meetingStore.updateState(.paused, for: meeting.id)
                     isPaused = true
+                    signalGatePhase = .paused
                 } catch {
                     do {
                         try await capture.resume(includeMicrophone: includeMicrophone)
                         isPaused = false
+                        signalGatePhase = .capturing
                     } catch {
                         isPaused = true
+                        signalGatePhase = .paused
                     }
                     throw error
                 }
@@ -579,25 +831,39 @@ final class AppModel {
     }
 
     func stopMeeting() async {
+        capturePresentationMode = .mainWindow
+        guard !isCaptureCommandInFlight else { return }
+        isCaptureCommandInFlight = true
+        defer { isCaptureCommandInFlight = false }
         guard let meeting = activeMeeting else { return }
         screen = .processing
         isBusy = true
         canRetryFinalization = false
         processingStatus = "Draining and sealing the source transcript…"
+        var captureStopped = false
         do {
             // Source loss may already have finished capture; still drain transcript work.
             do {
+                signalGatePhase = .draining
                 try await capture.stop()
             } catch MeetingCaptureError.notRunning {
                 // Capture already idle after source loss or prior stop.
             }
+            captureStopped = true
             await transcriptTask?.value
             transcriptTask = nil
             try await finalizeStoredMeeting(meeting)
         } catch {
-            errorMessage = "Capture stopped, but encrypted finalization failed. Retry without resuming capture."
-            canRetryFinalization = true
-            screen = .processing
+            if captureStopped {
+                signalGatePhase = .hidden
+                errorMessage = "Capture stopped, but encrypted finalization failed. Retry without resuming capture."
+                canRetryFinalization = true
+                screen = .processing
+            } else {
+                signalGatePhase = isPaused ? .paused : .capturing
+                errorMessage = "Capture state could not be changed safely. The control now reflects the actual capture state."
+                screen = .live
+            }
         }
         isBusy = false
     }
@@ -605,6 +871,8 @@ final class AppModel {
     private func captureStreamEndedUnexpectedly() async {
         // User-initiated stop owns finalization once screen leaves .live.
         guard screen == .live, let meeting = activeMeeting else { return }
+        capturePresentationMode = .mainWindow
+        signalGatePhase = .draining
         screen = .processing
         isBusy = true
         recoveryNotice = "Capture source was lost. Kineto preserved the finalized transcript up to the interruption."
@@ -615,6 +883,7 @@ final class AppModel {
             transcriptTask = nil
             try await finalizeStoredMeeting(meeting)
         } catch {
+            signalGatePhase = .hidden
             errorMessage = "Capture ended, but encrypted finalization failed. Retry without resuming capture."
             canRetryFinalization = true
             screen = .processing
@@ -682,6 +951,7 @@ final class AppModel {
 
     func retryFinalization() async {
         guard canRetryFinalization, let meeting = activeMeeting else { return }
+        capturePresentationMode = .mainWindow
         isBusy = true
         errorMessage = nil
         do {
@@ -694,7 +964,10 @@ final class AppModel {
     }
 
     private func finalizeStoredMeeting(_ meeting: Meeting) async throws {
+        capturePresentationMode = .mainWindow
         processingStatus = "Sealing the source transcript…"
+        signalGatePhase = .processing
+        defer { signalGatePhase = .hidden }
         var snapshot = try await meetingStore.snapshot(for: meeting.id)
         if snapshot.meeting.state != .stopped {
             try await meetingStore.updateState(.stopped, for: meeting.id)
@@ -728,6 +1001,9 @@ final class AppModel {
 
     func regenerateSummary() async {
         guard let activeMeeting else { return }
+        capturePresentationMode = .mainWindow
+        signalGatePhase = .processing
+        defer { signalGatePhase = .hidden }
         isGeneratingSummary = true
         do {
             let snapshot = try await meetingStore.snapshot(for: activeMeeting.id)
@@ -793,11 +1069,13 @@ final class AppModel {
 
     func deleteCurrentMeeting() async {
         guard let meeting = activeMeeting else { return }
+        capturePresentationMode = .mainWindow
         do {
             await cancelChat()
             if screen == .live || screen == .processing {
                 // Prevent source-loss/stop finalization from racing package deletion.
                 screen = .home
+                signalGatePhase = .hidden
                 await cancelTranslations()
                 await coordinator?.cancel()
                 await applePipeline?.cancel()
@@ -876,6 +1154,7 @@ final class AppModel {
     }
 
     private func resetMeetingView() {
+        capturePresentationMode = .mainWindow
         activeMeeting = nil
         coordinator = nil
         applePipeline = nil
@@ -895,6 +1174,7 @@ final class AppModel {
         isAnsweringChat = false
         recoveryNotice = nil
         isPaused = false
+        signalGatePhase = .hidden
         canRetryFinalization = false
         consentGranted = false
         errorMessage = nil
@@ -908,9 +1188,14 @@ final class AppModel {
 
 
     var recognitionLanguageOptions: [RecognitionLanguagePreference] {
-        [.automatic] + appleSpeechStatus.locales.map {
+        var options: [RecognitionLanguagePreference] = [.automatic]
+            + appleSpeechStatus.locales.map {
             .apple(localeIdentifier: $0.identifier)
         }
+        if !options.contains(recognitionLanguagePreference) {
+            options.insert(recognitionLanguagePreference, at: 1)
+        }
+        return options
     }
 
     func recognitionLanguageDisplayName(

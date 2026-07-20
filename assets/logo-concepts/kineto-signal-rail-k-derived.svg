@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Variant: Signal Rail K-Derived — exploratory concept; not the production macOS packaging authority. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Kineto signal rail K-derived concept</title>
+  <desc id="desc">An abstract graphite signal rail with three mint nodes and K-like negative space.</desc>
+  <rect width="512" height="512" fill="#FFFFFF"/>
+  <g fill="none" stroke="#232927" stroke-width="42" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M176 142V370"/>
+    <path d="M208 256L326 164"/>
+    <path d="M208 256L326 348"/>
+  </g>
+  <g fill="#72F2B1">
+    <circle cx="176" cy="256" r="36"/>
+    <circle cx="336" cy="156" r="36"/>
+    <circle cx="336" cy="356" r="36"/>
+  </g>
+</svg>

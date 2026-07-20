@@ -3,6 +3,35 @@ import KinetoCore
 import SwiftUI
 import UniformTypeIdentifiers
 
+enum ReviewPresentationPolicy {
+    enum Workspace: Hashable {
+        case transcript
+        case summary
+        case ask
+    }
+
+    static let sidebarMaximumWidth: CGFloat = 290
+    static let regularReviewPaneMinimumWidth: CGFloat = 360
+    static let reviewChromeAllowance: CGFloat = 72
+    static let compactPresentationThreshold: CGFloat =
+        sidebarMaximumWidth
+        + (regularReviewPaneMinimumWidth * 2)
+        + reviewChromeAllowance
+
+    static func isCompact(outerWidth: CGFloat) -> Bool {
+        outerWidth < compactPresentationThreshold
+    }
+
+    static func workspaceOptions(isCompact: Bool) -> [Workspace] {
+        isCompact ? [.transcript, .summary, .ask] : [.summary, .ask]
+    }
+
+    static func displayedWorkspace(for selection: Workspace, isCompact: Bool) -> Workspace {
+        guard !isCompact, selection == .transcript else { return selection }
+        return .summary
+    }
+}
+
 struct HomeView: View {
     @Bindable var model: AppModel
     @State private var importsModel = false
@@ -21,21 +50,30 @@ struct HomeView: View {
     @FocusState private var chatQuestionFocused: Bool
     @State private var submittedChatQuestion: String?
     @ScaledMetric(relativeTo: .body) private var chatEditorHeight = 64
-    @State private var reviewWorkspace: ReviewWorkspace = .summary
-
-    private enum ReviewWorkspace: Hashable {
-        case summary
-        case chat
-    }
-
+    @State private var sidebarVisibility: NavigationSplitViewVisibility = .all
+    @State private var usesCompactPresentation = false
+    @State private var reviewWorkspace: ReviewPresentationPolicy.Workspace = .summary
     private static let chatQuestionLimit = 1_500
 
     var body: some View {
-        NavigationSplitView {
+        GeometryReader { proxy in
+        NavigationSplitView(columnVisibility: sidebarVisibilityBinding) {
             List(selection: Binding(
                 get: { model.screen },
                 set: { screen in if let screen { model.show(screen) } }
             )) {
+                Section {
+                    HStack(spacing: 10) {
+                        Image("KinetoLogo")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 28, height: 28)
+                            .accessibilityHidden(true)
+                        Text("Kineto")
+                            .font(.headline)
+                    }
+                    .padding(.vertical, 4)
+                }
                 Section {
                     Label("Meetings", systemImage: "waveform")
                         .tag(AppModel.Screen.home)
@@ -48,7 +86,11 @@ struct HomeView: View {
                         .foregroundStyle(model.modelReady ? Color.secondary : Color.orange)
                 }
             }
-            .navigationSplitViewColumnWidth(min: 210, ideal: 245, max: 290)
+            .navigationSplitViewColumnWidth(
+                min: 210,
+                ideal: 245,
+                max: ReviewPresentationPolicy.sidebarMaximumWidth
+            )
         } detail: {
             Group {
                 switch model.screen {
@@ -68,6 +110,15 @@ struct HomeView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(.background)
+        }
+        .onAppear {
+            synchronizePresentation(for: proxy.size.width, restoresSidebar: true)
+        }
+        .onChange(of: proxy.size.width) { _, width in
+            synchronizePresentation(for: width, restoresSidebar: false)
+        }
+        .onChange(of: model.screen) {
+            synchronizePresentation(for: proxy.size.width, restoresSidebar: true)
         }
         .task {
             await model.refreshCapabilities()
@@ -114,6 +165,53 @@ struct HomeView: View {
         }
         .sheet(item: $evidenceSelection) { selection in
             EvidenceSheet(selection: selection)
+        }
+        }
+    }
+
+    private var sidebarVisibilityBinding: Binding<NavigationSplitViewVisibility> {
+        Binding(
+            get: { sidebarVisibility },
+            set: { sidebarVisibility = canPresentSidebar ? $0 : .detailOnly }
+        )
+    }
+
+    private var regularReviewWorkspaceBinding: Binding<ReviewPresentationPolicy.Workspace> {
+        Binding(
+            get: {
+                ReviewPresentationPolicy.displayedWorkspace(
+                    for: reviewWorkspace,
+                    isCompact: false
+                )
+            },
+            set: { reviewWorkspace = $0 }
+        )
+    }
+
+    private var canPresentSidebar: Bool {
+        guard !usesCompactPresentation else { return false }
+        switch model.screen {
+        case .home, .summary, .privacy:
+            return true
+        case .preflight, .live, .processing:
+            return false
+        }
+    }
+
+    private func synchronizePresentation(for width: CGFloat, restoresSidebar: Bool) {
+        let wasCompact = usesCompactPresentation
+        let isCompact = ReviewPresentationPolicy.isCompact(outerWidth: width)
+        usesCompactPresentation = isCompact
+
+        switch model.screen {
+        case .preflight, .live, .processing:
+            sidebarVisibility = .detailOnly
+        case .home, .summary, .privacy:
+            if isCompact {
+                sidebarVisibility = .detailOnly
+            } else if restoresSidebar || wasCompact {
+                sidebarVisibility = .all
+            }
         }
     }
 
@@ -292,7 +390,7 @@ struct HomeView: View {
                     .padding(8)
                 }
                 Toggle(isOn: $model.consentGranted) {
-                    Text("I have informed meeting participants and understand the selected capture boundary. Raw audio retention is off.")
+                    Text("I have informed meeting participants and understand the selected capture boundary. Live captions float above other apps while capture is active and may be visible in screen shares or screenshots. Raw audio retention is off.")
                         .font(.callout)
                 }
                 .toggleStyle(.checkbox)
@@ -326,51 +424,51 @@ struct HomeView: View {
     }
 
     private var live: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                Circle().fill(.red).frame(width: 9, height: 9)
+        let signalGatePresentation = model.signalGatePresentation
+        return VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Circle()
+                    .fill(model.isPaused ? Color.orange : Color.red)
+                    .frame(width: 8, height: 8)
+                    .accessibilityHidden(true)
                 Text(model.isPaused ? "Paused" : "Recording")
-                    .font(.headline)
-                Text(model.selectedTarget?.name ?? "Selected source")
+                    .font(.subheadline.weight(.semibold))
+                Divider()
+                    .frame(height: 16)
+                Text("Source · \(model.selectedTarget?.name ?? "Selected source")")
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
-                Spacer()
-                if let lag = model.lastTranscriptLagSeconds {
-                    Text(String(format: "lag %.1fs", lag))
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(lag > 3 ? Color.orange : Color.secondary)
-                        .accessibilityLabel("Transcript lag \(String(format: "%.1f", lag)) seconds")
-                }
-                if let timing = model.lastRecognitionTiming {
-                    Text(
-                        String(
-                            format: "q %.0f · asr %.0f · st %.0f ms",
-                            timing.queueWaitMs,
-                            timing.inferenceMs,
-                            timing.storeMs
-                        )
+                    .lineLimit(1)
+                    .help(model.selectedTarget?.name ?? "Selected source")
+                    .accessibilityLabel("Capture source \(model.selectedTarget?.name ?? "Selected source")")
+                Spacer(minLength: 12)
+                if let lag = model.lastTranscriptLagSeconds, lag > 3 {
+                    Label(
+                        String(format: "%.1f s behind", lag),
+                        systemImage: "exclamationmark.circle"
                     )
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel(
-                        "Queue \(Int(timing.queueWaitMs)) milliseconds, recognition \(Int(timing.inferenceMs)) milliseconds, storage \(Int(timing.storeMs)) milliseconds"
-                    )
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.orange)
+                    .accessibilityLabel("Transcript lag \(String(format: "%.1f", lag)) seconds")
                 }
                 Text(model.activeASREngine == .appleSpeech ? "Apple Speech" : "Whisper")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(model.activeASREngine == .appleSpeech ? Color.mint : Color.secondary)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Speech engine \(model.activeASREngine == .appleSpeech ? "Apple Speech" : "Whisper")")
                 Label("Local", systemImage: "checkmark.shield")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.mint)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Processing stays local")
             }
-            .padding(.horizontal, 24)
-            .frame(height: 54)
-            .background(.thinMaterial)
+            .padding(.horizontal, 20)
+            .frame(height: 40)
+            .background(.background)
             Divider()
             if liveTimelineItems.isEmpty {
                 ContentUnavailableView(
                     "Listening locally",
                     systemImage: "waveform",
-                    description: Text("Final transcript segments appear here. Partial hypotheses are never saved.")
+                    description: Text("Transcript text will appear here as people speak.")
                 )
                 .frame(maxHeight: .infinity)
             } else {
@@ -385,35 +483,43 @@ struct HomeView: View {
                                         $0.sourceSegmentID == segment.id
                                     }
                                 )
-                                .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
+                                .listRowInsets(EdgeInsets(top: 3, leading: 20, bottom: 3, trailing: 20))
                                 .id(item.id)
                             case let .volatile(volatile):
-                                VStack(alignment: .leading, spacing: 4) {
-                                    HStack {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    HStack(spacing: 7) {
                                         Text(volatile.source == .you ? "You" : "Selected Source")
                                             .font(.caption.weight(.semibold))
-                                            .foregroundStyle(.secondary)
                                         Text("Live")
-                                            .font(.caption2.weight(.bold))
-                                            .padding(.horizontal, 5)
-                                            .padding(.vertical, 2)
-                                            .background(.quaternary, in: Capsule())
+                                            .font(.caption2.weight(.semibold))
+                                            .foregroundStyle(.secondary)
                                         Spacer()
                                     }
+                                    .accessibilityElement(children: .combine)
                                     Text(volatile.text)
+                                        .font(.body)
                                         .foregroundStyle(.secondary)
                                         .italic()
+                                        .textSelection(.enabled)
                                 }
-                                .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
+                                .padding(.vertical, 3)
+                                .listRowInsets(EdgeInsets(top: 3, leading: 20, bottom: 3, trailing: 20))
                                 .id(item.id)
                             case let .gap(gap):
-                                Label(
-                                    "Transcript gap · \(gap.reason)",
-                                    systemImage: "exclamationmark.triangle"
-                                )
-                                .foregroundStyle(.orange)
-                                .font(.callout)
-                                .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
+                                HStack(alignment: .firstTextBaseline, spacing: 7) {
+                                    Image(systemName: "waveform.slash")
+                                        .foregroundStyle(.orange)
+                                        .accessibilityHidden(true)
+                                    Text("Recording gap")
+                                        .font(.caption.weight(.semibold))
+                                    Text(Self.gapDescription(gap.reason))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    Spacer()
+                                }
+                                .accessibilityElement(children: .combine)
+                                .accessibilityLabel("Recording gap. \(Self.gapDescription(gap.reason))")
+                                .listRowInsets(EdgeInsets(top: 4, leading: 20, bottom: 4, trailing: 20))
                                 .id(item.id)
                             }
                         }
@@ -432,19 +538,35 @@ struct HomeView: View {
                 Button(model.isPaused ? "Resume" : "Pause", systemImage: model.isPaused ? "play.fill" : "pause.fill") {
                     Task { await model.pauseOrResume() }
                 }
+                .disabled(!signalGatePresentation.isActionAvailable(.pauseOrResume))
                 .keyboardShortcut(.space, modifiers: [])
+                if model.canEnterFloatingMode && model.capturePresentationMode == .mainWindow {
+                    Button("Use Floating Captions", systemImage: "rectangle.on.rectangle") {
+                        model.enterFloatingMode()
+                    }
+                }
+                Spacer()
                 Button("Stop", systemImage: "stop.fill") {
                     Task { await model.stopMeeting() }
                 }
+                .disabled(!signalGatePresentation.isActionAvailable(.stop))
                 .buttonStyle(.borderedProminent)
+                .tint(.red)
+                .controlSize(.large)
                 .keyboardShortcut(".", modifiers: .command)
-                Spacer()
-                Button("Delete…", systemImage: "trash", role: .destructive) {
-                    confirmsDelete = true
+                Menu {
+                    Button("Delete Meeting…", systemImage: "trash", role: .destructive) {
+                        confirmsDelete = true
+                    }
+                } label: {
+                    Label("More actions", systemImage: "ellipsis.circle")
                 }
+                .menuStyle(.borderlessButton)
+                .accessibilityLabel("More meeting actions")
             }
-            .padding(18)
-            .background(.thinMaterial)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 12)
+            .background(.background)
         }
         .navigationTitle("Live meeting")
     }
@@ -488,6 +610,21 @@ struct HomeView: View {
                 return $0.id < $1.id
             }
             return $0.sortTime < $1.sortTime
+        }
+    }
+
+    private static func gapDescription(_ reason: String) -> String {
+        switch reason {
+        case "audio-frame-discarded":
+            "An audio frame could not be processed"
+        case "source-lost":
+            "The capture source was lost"
+        case "speech-restarting":
+            "Speech recognition is restarting"
+        case "speech-start-failed":
+            "Speech recognition is reconnecting"
+        default:
+            "A recorded interval was unavailable"
         }
     }
 
@@ -559,70 +696,227 @@ struct HomeView: View {
     }
 
     private var summary: some View {
-        VStack(spacing: 0) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Meeting complete").font(.largeTitle.weight(.semibold))
-                    Text("Review the summary or ask grounded questions. Every answer links to transcript evidence.")
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button("New Meeting", systemImage: "plus") {
-                    Task { await model.newMeeting() }
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.mint)
-                .disabled(model.isGeneratingSummary)
+        SummaryViewportLayout {
+            summaryHeader
+
+            if usesCompactPresentation {
+                compactSummaryReview
+            } else {
+                regularSummaryReview
             }
-            .padding(24)
 
-            HSplitView {
-                VStack(spacing: 0) {
-                    Picker("Review workspace", selection: $reviewWorkspace) {
-                        Text("Summary").tag(ReviewWorkspace.summary)
-                        Text("Ask").tag(ReviewWorkspace.chat)
+            summaryFooter
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .navigationTitle("Summary")
+    }
+
+    private var summaryHeader: some View {
+        Group {
+            if usesCompactPresentation {
+                VStack(alignment: .leading, spacing: 16) {
+                    summaryTitle
+                    newMeetingButton
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    HStack {
+                        summaryTitle
+                        Spacer()
+                        newMeetingButton
                     }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .padding(12)
-                    .accessibilityLabel("Meeting review workspace")
+                    .fixedSize(horizontal: true, vertical: false)
 
-                    Divider()
+                    VStack(alignment: .leading, spacing: 16) {
+                        summaryTitle
+                        newMeetingButton
+                    }
+                }
+            }
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
 
+    private var summaryTitle: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Meeting complete")
+                .font(.largeTitle.weight(.semibold))
+            Text("Summary and Ask derive only from the finalized Original Transcript, with linked evidence.")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var newMeetingButton: some View {
+        Button("New Meeting", systemImage: "plus") {
+            Task { await model.newMeeting() }
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(.mint)
+        .disabled(model.isGeneratingSummary)
+        .fixedSize()
+    }
+
+    private var regularSummaryReview: some View {
+        HSplitView {
+            VStack(spacing: 0) {
+                Picker("Review workspace", selection: regularReviewWorkspaceBinding) {
+                    ForEach(ReviewPresentationPolicy.workspaceOptions(isCompact: false), id: \.self) {
+                        reviewWorkspaceLabel($0).tag($0)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .padding(12)
+                .accessibilityLabel("Meeting review workspace")
+
+                Divider()
+
+                Group {
                     switch reviewWorkspace {
-                    case .summary:
+                    case .transcript, .summary:
                         summaryWorkspace
-                    case .chat:
+                    case .ask:
                         chatWorkspace
                     }
                 }
-                .frame(minWidth: 360, idealWidth: 440)
-
-                List(model.segments) { segment in
-                    TranscriptRow(
-                        segment: segment,
-                        translation: model.translations.first { $0.sourceSegmentID == segment.id }
-                    )
-                }
-                .frame(minWidth: 360)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            .frame(
+                minWidth: ReviewPresentationPolicy.regularReviewPaneMinimumWidth,
+                idealWidth: 440,
+                maxWidth: .infinity,
+                maxHeight: .infinity
+            )
 
-            HStack {
-                Button("Delete…", role: .destructive) { confirmsDelete = true }
-                    .disabled(model.isGeneratingSummary)
-                Button("Export Plaintext…", systemImage: "square.and.arrow.up") {
-                    Task { await model.exportCurrentMeeting() }
-                }
-                .keyboardShortcut("e", modifiers: .command)
-                .disabled(model.isGeneratingSummary)
-                Spacer()
-                Text(model.isGeneratingSummary ? "Generating summary…" : "Encrypted locally · raw audio off")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .padding(16)
+            transcriptWorkspace
+                .frame(
+                    minWidth: ReviewPresentationPolicy.regularReviewPaneMinimumWidth,
+                    maxWidth: .infinity,
+                    maxHeight: .infinity
+                )
         }
-        .navigationTitle("Summary")
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var compactSummaryReview: some View {
+        VStack(spacing: 0) {
+            ViewThatFits(in: .horizontal) {
+                Picker("Review workspace", selection: $reviewWorkspace) {
+                    ForEach(ReviewPresentationPolicy.workspaceOptions(isCompact: true), id: \.self) {
+                        reviewWorkspaceLabel($0).tag($0)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize(horizontal: true, vertical: false)
+                .accessibilityLabel("Meeting review workspace")
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Review workspace")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Picker("Review workspace", selection: $reviewWorkspace) {
+                        ForEach(ReviewPresentationPolicy.workspaceOptions(isCompact: true), id: \.self) {
+                            reviewWorkspaceLabel($0).tag($0)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .accessibilityLabel("Meeting review workspace")
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(12)
+
+            Divider()
+
+            Group {
+                switch reviewWorkspace {
+                case .transcript:
+                    transcriptWorkspace
+                case .summary:
+                    summaryWorkspace
+                case .ask:
+                    chatWorkspace
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+    @ViewBuilder
+    private func reviewWorkspaceLabel(_ workspace: ReviewPresentationPolicy.Workspace) -> some View {
+        switch workspace {
+        case .transcript:
+            Text("Original Transcript")
+        case .summary:
+            Text("Summary")
+        case .ask:
+            Text("Ask")
+        }
+    }
+
+
+    private var transcriptWorkspace: some View {
+        List(model.segments) { segment in
+            TranscriptRow(
+                segment: segment,
+                translation: model.translations.first { $0.sourceSegmentID == segment.id }
+            )
+        }
+    }
+
+    private var summaryFooter: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack {
+                summaryDeleteButton
+                summaryExportButton
+                Spacer()
+                summaryStatus
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                summaryStatus
+                ViewThatFits(in: .horizontal) {
+                    HStack {
+                        summaryDeleteButton
+                        summaryExportButton
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        summaryDeleteButton
+                        summaryExportButton
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var summaryDeleteButton: some View {
+        Button("Delete…", role: .destructive) { confirmsDelete = true }
+            .disabled(model.isGeneratingSummary)
+            .fixedSize()
+    }
+
+    private var summaryExportButton: some View {
+        Button("Export Plaintext…", systemImage: "square.and.arrow.up") {
+            Task { await model.exportCurrentMeeting() }
+        }
+        .keyboardShortcut("e", modifiers: .command)
+        .disabled(model.isGeneratingSummary)
+        .fixedSize()
+    }
+
+    private var summaryStatus: some View {
+        Text(model.isGeneratingSummary ? "Generating summary…" : "Encrypted locally · raw audio off")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private var summaryWorkspace: some View {
@@ -681,112 +975,178 @@ struct HomeView: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var chatWorkspace: some View {
         VStack(spacing: 0) {
-            if model.chatTurns.isEmpty {
-                ContentUnavailableView {
-                    Label("Ask about this meeting", systemImage: "text.magnifyingglass")
-                } description: {
-                    Text("Search only the finalized transcript. Answers stay grounded in linked evidence.")
-                } actions: {
-                    chatQuestionSuggestions
-                }
-            } else {
-                List {
-                    Section("Conversation") {
-                        ForEach(Array(model.chatTurns.reversed()), id: \.id) { turn in
-                            chatTurn(turn)
-                                .padding(.vertical, 6)
+            Group {
+                if model.chatTurns.isEmpty {
+                    VStack(spacing: 20) {
+                        Spacer(minLength: 16)
+
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 32, weight: .medium))
+                            .foregroundStyle(.mint)
+                            .accessibilityHidden(true)
+
+                        VStack(spacing: 8) {
+                            Text("Ask Kineto")
+                                .font(.title2.weight(.semibold))
+
+                            Text("Ask about this meeting using only its finalized transcript. Answers stay on this Mac and link back to evidence.")
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .frame(maxWidth: 440)
+
+                        chatQuestionSuggestions
+
+                        Spacer(minLength: 16)
+                    }
+                    .padding(24)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    List {
+                        Section("Conversation") {
+                            ForEach(Array(model.chatTurns.reversed()), id: \.id) { turn in
+                                chatTurn(turn)
+                                    .padding(.vertical, 6)
+                                    .listRowSeparator(.hidden)
+                                    .listRowBackground(Color.clear)
+                            }
                         }
                     }
+                    .listStyle(.plain)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            Divider()
+            VStack(spacing: 0) {
+                Divider()
 
-            meetingChatComposer
-                .padding(12)
-                .background(.bar)
+                meetingChatComposer
+                    .padding(12)
+            }
+            .background(.bar)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var chatQuestionSuggestions: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Try asking")
+        VStack(spacing: 10) {
+            Text("Try a prompt")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
-            Button("What decisions were made?") {
-                useChatSuggestion("What decisions were made?")
+
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    chatSuggestionButton("What decisions were made?")
+                    chatSuggestionButton("What should happen next?")
+                    chatSuggestionButton("What remains unresolved?")
+                }
+
+                VStack(spacing: 8) {
+                    chatSuggestionButton("What decisions were made?")
+                    chatSuggestionButton("What should happen next?")
+                    chatSuggestionButton("What remains unresolved?")
+                }
             }
-            .buttonStyle(.bordered)
-            Button("What should happen next?") {
-                useChatSuggestion("What should happen next?")
-            }
-            .buttonStyle(.bordered)
-            Button("What remains unresolved?") {
-                useChatSuggestion("What remains unresolved?")
-            }
-            .buttonStyle(.bordered)
         }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func chatSuggestionButton(_ question: String) -> some View {
+        Button(question) {
+            useChatSuggestion(question)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.regular)
+        .accessibilityHint("Adds this prompt to the Ask Kineto composer.")
     }
 
     private func chatTurn(_ turn: ChatTurnRecord) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label("You asked", systemImage: "person.crop.circle")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-            Text(turn.question)
-                .textSelection(.enabled)
-
-            Divider()
-
-            if turn.outcome == .grounded {
-                Label("Grounded answer", systemImage: "checkmark.seal.fill")
+        VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("You", systemImage: "person.crop.circle.fill")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.mint)
-                Text(turn.answer)
+                    .foregroundStyle(.secondary)
+
+                Text(turn.question)
                     .textSelection(.enabled)
-                HStack(spacing: 8) {
-                    ForEach(Array(turn.citations.enumerated()), id: \.offset) { _, citation in
-                        Button("Evidence") {
-                            if let selection = model.citationSelection(for: citation) {
-                                evidenceSelection = EvidenceSelection(
-                                    segment: selection.0,
-                                    supportingText: selection.1
-                                )
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(12)
+            .background(.quaternary, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .accessibilityElement(children: .combine)
+
+            VStack(alignment: .leading, spacing: 10) {
+                if turn.outcome == .grounded {
+                    Label("Kineto · Grounded answer", systemImage: "checkmark.seal.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.mint)
+
+                    Text(turn.answer)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    if !turn.citations.isEmpty {
+                        HStack(spacing: 6) {
+                            ForEach(Array(turn.citations.enumerated()), id: \.offset) { index, citation in
+                                Button("Evidence \(index + 1)", systemImage: "doc.text.magnifyingglass") {
+                                    if let selection = model.citationSelection(for: citation) {
+                                        evidenceSelection = EvidenceSelection(
+                                            segment: selection.0,
+                                            supportingText: selection.1
+                                        )
+                                    }
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                                .accessibilityHint("Opens the supporting finalized transcript excerpt.")
                             }
                         }
-                        .buttonStyle(.link)
-                        .font(.caption)
                     }
-                }
-            } else {
-                Label("No grounded answer found", systemImage: "questionmark.circle")
-                    .font(.caption.weight(.semibold))
-                Text(model.chatNoAnswerDetail(turn))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                if !model.chatNoAnswerExcerpts(turn).isEmpty {
-                    Text("Related transcript excerpts — not an answer")
+                } else {
+                    Label("Kineto · No grounded answer", systemImage: "questionmark.circle")
                         .font(.caption.weight(.semibold))
+
+                    Text(model.chatNoAnswerDetail(turn))
+                        .font(.caption)
                         .foregroundStyle(.secondary)
-                }
-                ForEach(Array(turn.citations.enumerated()), id: \.offset) { _, citation in
-                    Button("Evidence") {
-                        if let selection = model.citationSelection(for: citation) {
-                            evidenceSelection = EvidenceSelection(
-                                segment: selection.0,
-                                supportingText: selection.1
-                            )
+
+                    if !model.chatNoAnswerExcerpts(turn).isEmpty {
+                        Text("Related transcript excerpts — not an answer")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if !turn.citations.isEmpty {
+                        HStack(spacing: 6) {
+                            ForEach(Array(turn.citations.enumerated()), id: \.offset) { index, citation in
+                                Button("Evidence \(index + 1)", systemImage: "doc.text.magnifyingglass") {
+                                    if let selection = model.citationSelection(for: citation) {
+                                        evidenceSelection = EvidenceSelection(
+                                            segment: selection.0,
+                                            supportingText: selection.1
+                                        )
+                                    }
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                                .accessibilityHint("Opens a related finalized transcript excerpt.")
+                            }
                         }
                     }
-                    .buttonStyle(.link)
-                    .font(.caption)
                 }
             }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
+        .accessibilityElement(children: .contain)
     }
 
     private var meetingChatComposer: some View {
@@ -796,13 +1156,17 @@ struct HomeView: View {
         let questionIsEmpty = chatQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
         return VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Label("Finalized transcript only", systemImage: "doc.text.magnifyingglass")
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Label("Ask Kineto", systemImage: "bubble.left.and.text.bubble.right")
+                    .font(.headline)
+
                 Spacer(minLength: 8)
-                Label("On this Mac", systemImage: "lock.fill")
+
+                Label("On this Mac · Finalized transcript only", systemImage: "lock.fill")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
             }
-            .font(.caption)
-            .foregroundStyle(.secondary)
+            .accessibilityElement(children: .combine)
 
             ZStack(alignment: .topLeading) {
                 TextEditor(text: boundedChatQuestion)
@@ -831,7 +1195,7 @@ struct HomeView: View {
                 if chatQuestion.isEmpty {
                     Text("Ask a question about this meeting")
                         .font(.body)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(.secondary)
                         .padding(.horizontal, 9)
                         .padding(.vertical, 12)
                         .allowsHitTesting(false)
@@ -925,7 +1289,7 @@ struct HomeView: View {
 
     private func useChatSuggestion(_ question: String) {
         chatQuestion = question
-        reviewWorkspace = .chat
+        reviewWorkspace = .ask
         if model.canAskCurrentMeeting, !model.isGeneratingSummary, !model.isAnsweringChat {
             chatQuestionFocused = true
         }
@@ -1036,8 +1400,8 @@ private struct TranscriptRow: View {
     let translation: TranslationRecord?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 7) {
                 Text(segment.speakerLabel.displayName)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(Self.color(for: segment.speakerLabel))
@@ -1045,26 +1409,33 @@ private struct TranscriptRow: View {
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
                 Text(segment.language.rawValue.uppercased())
-                    .font(.caption2.weight(.bold))
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background(.quaternary, in: Capsule())
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
                 Spacer()
             }
-            Text(segment.text).textSelection(.enabled)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(
+                "\(segment.speakerLabel.displayName), \(Self.timestamp(segment.startTime)), \(segment.language.rawValue)"
+            )
+            Text(segment.text)
+                .font(.body)
+                .foregroundStyle(.primary)
+                .textSelection(.enabled)
             if let translation {
                 Text(translation.text)
+                    .font(.callout)
                     .foregroundStyle(.secondary)
-                    .padding(.leading, 12)
+                    .padding(.leading, 10)
                     .overlay(alignment: .leading) {
                         Rectangle()
-                            .fill(Self.color(for: segment.speakerLabel).opacity(0.65))
+                            .fill(Self.color(for: segment.speakerLabel).opacity(0.45))
                             .frame(width: 2)
                     }
+                    .accessibilityLabel("Translation: \(translation.text)")
                     .textSelection(.enabled)
             }
         }
-        .padding(.vertical, 7)
+        .padding(.vertical, 4)
     }
 
     private static func color(for label: SpeakerLabel) -> Color {

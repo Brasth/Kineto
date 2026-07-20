@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>Kineto Logo Concepts</title>
+  <style>
+    :root { color-scheme: dark; --bg:#07110f; --surface:#10201c; --surface-raised:#172b25; --border:rgba(173,255,219,.18); --text:#f0f7f3; --muted:#a6bbb1; --accent:#71f0b5; --accent-strong:#b1ffdb; --shadow:0 24px 60px rgba(0,0,0,.28); }
+    html[data-theme="light"] { color-scheme:light; --bg:#f4f8f5; --surface:#fff; --surface-raised:#eaf3ee; --border:rgba(20,52,42,.16); --text:#12231d; --muted:#526960; --accent:#087a4d; --accent-strong:#075e3d; --shadow:0 18px 44px rgba(30,65,50,.12); }
+    * { box-sizing:border-box; }
+    body { margin:0; min-width:320px; background:var(--bg); color:var(--text); font:16px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif; }
+    .shell { width:min(1180px,calc(100% - 40px)); margin:0 auto; padding:56px 0 48px; }
+    .masthead { display:flex; align-items:flex-start; justify-content:space-between; gap:28px; margin-bottom:48px; }
+    .eyebrow { margin:0 0 12px; color:var(--accent); font-size:12px; font-weight:700; letter-spacing:.14em; text-transform:uppercase; }
+    h1 { max-width:720px; margin:0; font-size:clamp(34px,6vw,68px); line-height:.98; letter-spacing:-.055em; }
+    .lede { max-width:650px; margin:20px 0 0; color:var(--muted); font-size:18px; }
+    .theme-toggle,.download { display:inline-flex; align-items:center; justify-content:center; min-height:44px; border:1px solid var(--border); border-radius:999px; background:var(--surface); color:var(--text); cursor:pointer; font:inherit; text-decoration:none; }
+    .theme-toggle { flex:0 0 auto; padding:0 16px; }
+    .theme-toggle:hover,.theme-toggle:focus-visible,.download:hover,.download:focus-visible { border-color:var(--accent); color:var(--accent-strong); }
+    :focus-visible { outline:3px solid var(--accent); outline-offset:3px; }
+    .section-heading { display:flex; align-items:baseline; justify-content:space-between; gap:16px; margin-bottom:16px; }
+    h2 { margin:0; font-size:18px; letter-spacing:-.02em; }
+    .section-heading p { margin:0; color:var(--muted); font-size:14px; }
+    .concept-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:18px; }
+    .concept-card { display:flex; flex-direction:column; overflow:hidden; border:1px solid var(--border); border-radius:20px; background:var(--surface); box-shadow:var(--shadow); }
+    .concept-art { display:grid; place-items:center; min-height:300px; padding:28px; background:var(--surface-raised); }
+    .concept-art img { display:block; width:min(100%,260px); aspect-ratio:1; object-fit:contain; transition:transform 180ms ease; }
+    .concept-card:hover .concept-art img { transform:scale(1.035); }
+    .concept-copy { display:flex; flex:1; flex-direction:column; padding:22px; }
+    .concept-index { margin:0 0 8px; color:var(--accent); font-size:12px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; }
+    h3 { margin:0; font-size:22px; letter-spacing:-.03em; }
+    .concept-copy p { margin:10px 0 20px; color:var(--muted); }
+    .download { align-self:flex-start; margin-top:auto; padding:0 14px; font-size:14px; }
+    footer { margin-top:28px; border-top:1px solid var(--border); color:var(--muted); font-size:13px; }
+    .provenance { max-width:780px; margin:20px 0 0; }
+    @media (max-width:780px) { .shell{width:min(100% - 28px,620px);padding-top:32px}.masthead{flex-direction:column;margin-bottom:34px}.theme-toggle{align-self:flex-start}.concept-grid{grid-template-columns:1fr}.concept-art{min-height:260px} }
+    @media (prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior:auto!important; transition-duration:.01ms!important; animation-duration:.01ms!important; animation-iteration-count:1!important; } }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="masthead"><div class="intro"><p class="eyebrow">Kineto / identity study</p><h1>Logo concepts for a clearer signal.</h1><p class="lede">Three authored directions for a static signal-rail identity: symbol-first, monochrome-capable, and separate from capture status.</p></div><button class="theme-toggle" type="button" aria-label="Switch to light theme"><span data-theme-label>Use light theme</span></button></header>
+    <main id="main-content"><div class="section-heading"><h2>Three directions</h2><p>Exploratory SVGs · 512 × 512</p></div><section class="concept-grid" aria-label="Kineto logo concept gallery">
+      <article class="concept-card"><div class="concept-art"><img src="kineto-signal-rail-minimal.svg" alt="Minimal signal rail with three mint nodes and a graphite broken rail"></div><div class="concept-copy"><p class="concept-index">01 / Minimal</p><h3>Broken Rail</h3><p>Direct, compact, and easiest to simplify for the smallest macOS surfaces.</p><a class="download" href="kineto-signal-rail-minimal.svg" download>Download SVG</a></div></article>
+      <article class="concept-card"><div class="concept-art"><img src="kineto-signal-rail-negative-space.svg" alt="Negative-space signal rail with two mint nodes and a white diagonal boundary"></div><div class="concept-copy"><p class="concept-index">02 / Negative space</p><h3>Boundary Cut</h3><p>A stronger evidence-boundary metaphor with a bold, enclosed silhouette.</p><a class="download" href="kineto-signal-rail-negative-space.svg" download>Download SVG</a></div></article>
+      <article class="concept-card"><div class="concept-art"><img src="kineto-signal-rail-k-derived.svg" alt="K-derived signal rail with three mint nodes and graphite geometry"></div><div class="concept-copy"><p class="concept-index">03 / K-derived</p><h3>Quiet K</h3><p>A subtle Kineto reference without turning the app icon into a lettermark.</p><a class="download" href="kineto-signal-rail-k-derived.svg" download>Download SVG</a></div></article>
+    </section></main>
+    <footer><p class="provenance">These are authored exploratory SVG concepts, not the production macOS packaging authority. Final packaging must use one validated vector-derived Icon Composer <code>.icon</code> or <code>AppIcon.appiconset</code> source.</p></footer>
+  </div>
+  <script>(()=>{const root=document.documentElement;const button=document.querySelector('.theme-toggle');const label=button.querySelector('[data-theme-label]');button.addEventListener('click',()=>{const nextTheme=root.dataset.theme==='dark'?'light':'dark';const nextAction=nextTheme==='dark'?'light':'dark';root.dataset.theme=nextTheme;label.textContent=`Use ${nextAction} theme`;button.setAttribute('aria-label',`Switch to ${nextAction} theme`);});})();</script>
+</body>
+</html>

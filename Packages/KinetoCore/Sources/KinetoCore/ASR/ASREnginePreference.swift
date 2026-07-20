@@ -119,6 +119,36 @@ public struct AppleSpeechStatus: Sendable, Equatable {
         isFrameworkAvailable && installedLocaleIdentifier(for: preference) != nil
     }
 
+    /// Converts a language-only or legacy preference into an exact picker tag.
+    /// An unavailable language becomes automatic recognition instead of leaving
+    /// SwiftUI with a selection that has no corresponding menu item.
+    public func normalizedPreference(
+        _ preference: RecognitionLanguagePreference
+    ) -> RecognitionLanguagePreference {
+        guard !preference.isAutomatic else { return .automatic }
+        guard let identifier = preference.localeIdentifier else { return .automatic }
+
+        if let exact = locales.first(where: { Self.exactMatch($0.identifier, identifier) }) {
+            return .apple(localeIdentifier: exact.identifier)
+        }
+
+        guard let requestedLanguage = Locale(identifier: identifier)
+            .language
+            .languageCode?
+            .identifier,
+            let languageMatch = locales.first(where: {
+                let language = Locale(identifier: $0.identifier)
+                    .language
+                    .languageCode?
+                    .identifier
+                return language?.caseInsensitiveCompare(requestedLanguage) == .orderedSame
+            })
+        else {
+            return .automatic
+        }
+        return .apple(localeIdentifier: languageMatch.identifier)
+    }
+
     public func readinessMessage(for preference: RecognitionLanguagePreference) -> String {
         guard isFrameworkAvailable else {
             return "Apple Speech is unavailable on this Mac. Use Whisper."
@@ -157,6 +187,11 @@ public struct AppleSpeechStatus: Sendable, Equatable {
             || left.caseInsensitiveCompare(right) == .orderedSame
             || (rightIsLanguageOnly
                 && leftLocale.language.languageCode?.identifier.caseInsensitiveCompare(rhs) == .orderedSame)
+    }
+
+    private static func exactMatch(_ lhs: String, _ rhs: String) -> Bool {
+        Locale(identifier: lhs).identifier(.bcp47)
+            .caseInsensitiveCompare(Locale(identifier: rhs).identifier(.bcp47)) == .orderedSame
     }
 }
 

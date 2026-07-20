@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Variant: signal rail minimal. Exploratory concept; not the production macOS packaging authority. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Kineto minimal signal rail concept" shape-rendering="geometricPrecision">
+  <rect width="512" height="512" fill="#FFFFFF"/>
+  <path fill="#202725" d="M104 200H316L288 312H104C73.072 312 48 286.928 48 256S73.072 200 104 200Z"/>
+  <path fill="#202725" d="M344 200H408C438.928 200 464 225.072 464 256S438.928 312 408 312H316L344 200Z"/>
+  <circle cx="112" cy="256" r="36" fill="#71F0B5"/>
+  <circle cx="256" cy="256" r="36" fill="#71F0B5"/>
+  <circle cx="400" cy="256" r="36" fill="#71F0B5"/>
+</svg>

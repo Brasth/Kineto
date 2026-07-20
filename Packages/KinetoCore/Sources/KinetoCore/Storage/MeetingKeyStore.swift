@@ -12,9 +12,14 @@ public protocol MeetingKeyStore: Sendable {
     func key(for meetingID: UUID, purpose: MeetingKeyPurpose) async throws -> SymmetricKey
     func deleteKey(for meetingID: UUID, purpose: MeetingKeyPurpose) async throws
     func deleteKeys(for meetingID: UUID) async throws
+    func removeRetiredKeyMaterial(for meetingID: UUID) async throws
     func setGeneration(_ generation: UUID, for meetingID: UUID) async throws
     func generation(for meetingID: UUID) async throws -> UUID
     func deleteGeneration(for meetingID: UUID) async throws
+}
+
+public extension MeetingKeyStore {
+    func removeRetiredKeyMaterial(for meetingID: UUID) async throws {}
 }
 
 public enum MeetingKeyStoreError: Error, Equatable {
@@ -79,6 +84,7 @@ public struct KeychainMeetingKeyStore: MeetingKeyStore {
     public func deleteKeys(for meetingID: UUID) async throws {
         try await deleteKey(for: meetingID, purpose: .text)
         try await deleteKey(for: meetingID, purpose: .audio)
+        try await removeRetiredKeyMaterial(for: meetingID)
         try await deleteGeneration(for: meetingID)
     }
 
@@ -125,11 +131,27 @@ public struct KeychainMeetingKeyStore: MeetingKeyStore {
         }
     }
 
+    public func removeRetiredKeyMaterial(for meetingID: UUID) async throws {
+        let status = SecItemDelete(legacyRetiredKeyQuery(meetingID: meetingID) as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw MeetingKeyStoreError.keychain(status)
+        }
+    }
+
     private func baseQuery(meetingID: UUID, purpose: MeetingKeyPurpose) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: "\(meetingID.uuidString).\(purpose.rawValue)",
+            kSecAttrSynchronizable as String: false
+        ]
+    }
+
+    private func legacyRetiredKeyQuery(meetingID: UUID) -> [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: "\(meetingID.uuidString).attachment",
             kSecAttrSynchronizable as String: false
         ]
     }
