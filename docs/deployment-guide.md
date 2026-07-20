@@ -21,8 +21,25 @@ The main app is sandboxed with microphone and user-selected-file access only. `K
 | `scripts/build-whisper-xcframework.sh` | Pinned whisper.cpp XCFramework build |
 | `scripts/verify-model-artifacts.sh` | Intended release artifact gate; see known blockers |
 | `scripts/build-release-dmg.sh` | Archive, export, DMG, notarization, Gatekeeper, digest |
+| `scripts/build-internal-dmg.sh` | Internal unsigned/ad-hoc DMG packaging with `create-dmg` |
+| `.github/workflows/internal-dmg.yml` | Main/tag GitHub Actions workflow for internal unsigned DMG artifacts |
 
 All commands below run from the repository root.
+
+### Internal CI DMG without Apple credentials
+
+The repository includes a non-credentialed packaging path for internal engineering and QA builds:
+
+```bash
+npm install --global create-dmg@8.1.0
+./scripts/build-internal-dmg.sh
+```
+
+The script builds an arm64 Release app without signing credentials, runs the pinned model/runtime verifier, creates the unsigned DMG with `create-dmg --no-code-sign`, embeds `THIRD_PARTY_NOTICES`, and writes a SHA-256 sidecar under `build/internal-dmg/`. Outputs are internal artifacts only: they are unsigned, not notarized, not stapled, and must not be presented as public releases.
+
+`.github/workflows/internal-dmg.yml` runs the same path on pushes to `main` and `vMAJOR.MINOR.PATCH` tags. It uses a macOS 26 arm64 runner, Node 20, and `create-dmg` 8.1.0. It has no Apple signing or notarization secrets and does not invoke `scripts/build-release-dmg.sh`.
+
+This workflow still requires the pinned model and native framework artifacts to pass `scripts/verify-model-artifacts.sh`. A successful CI artifact does not establish Developer ID signing, notarization, Gatekeeper acceptance, TCC behavior, clean-account distribution, or public-release readiness.
 
 ## Workstation prerequisites
 

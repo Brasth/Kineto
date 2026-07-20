@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Variant: negative-space signal rail. Exploratory concept; not the production macOS packaging authority. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Kineto negative-space signal rail concept</title>
+  <desc id="desc">A bold graphite geometric rail crossed by a clean white diagonal boundary with two mint nodes.</desc>
+  <rect width="512" height="512" fill="#FFFFFF"/>
+  <path fill="#222824" d="M120 136H392L432 176V336L392 376H120L80 336V176Z"/>
+  <path fill="none" stroke="#FFFFFF" stroke-width="32" stroke-linecap="round" d="M144 296L368 216"/>
+  <circle cx="144" cy="296" r="38" fill="#63F5B5"/>
+  <circle cx="368" cy="216" r="38" fill="#63F5B5"/>
+</svg>

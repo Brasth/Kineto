@@ -31,7 +31,20 @@ private actor MemoryMeetingKeyStore: MeetingKeyStore {
     func deleteKeys(for meetingID: UUID) {
         values.removeValue(forKey: key(meetingID, .text))
         values.removeValue(forKey: key(meetingID, .audio))
+        values.removeValue(forKey: retiredKey(meetingID))
         generations[meetingID] = nil
+    }
+
+    func removeRetiredKeyMaterial(for meetingID: UUID) {
+        values.removeValue(forKey: retiredKey(meetingID))
+    }
+
+    func createRetiredKeyMaterial(for meetingID: UUID) {
+        values[retiredKey(meetingID)] = SymmetricKey(size: .bits256)
+    }
+
+    func hasRetiredKeyMaterial(for meetingID: UUID) -> Bool {
+        values[retiredKey(meetingID)] != nil
     }
 
     func setGeneration(_ generation: UUID, for meetingID: UUID) {
@@ -51,6 +64,10 @@ private actor MemoryMeetingKeyStore: MeetingKeyStore {
 
     private func key(_ meetingID: UUID, _ purpose: MeetingKeyPurpose) -> String {
         "\(meetingID.uuidString).\(purpose.rawValue)"
+    }
+
+    private func retiredKey(_ meetingID: UUID) -> String {
+        "\(meetingID.uuidString).attachment"
     }
 }
 
@@ -434,7 +451,7 @@ private func sealForPackage<T: Encodable>(
             authenticating: packageAAD(meetingID: meeting.id, generation: generation, file: "manifest")
         )
     )
-    #expect(manifest.version == 2)
+    #expect(manifest.version == 3)
     #expect(manifest.chatTurnIDs == [turn.id, noAnswerTurn.id])
 
     let exportURL = root.appending(path: "chat.json")
@@ -531,7 +548,7 @@ private func sealForPackage<T: Encodable>(
             authenticating: packageAAD(meetingID: meeting.id, generation: upgradedGeneration, file: "manifest")
         )
     )
-    #expect(upgradedManifest.version == 2)
+    #expect(upgradedManifest.version == 3)
     #expect(try await store.snapshot(for: meeting.id).chatTurns == [turn])
 }
 
@@ -708,4 +725,87 @@ private func sealForPackage<T: Encodable>(
     } catch let error as MeetingStoreError {
         #expect(error == .corrupted)
     }
+}
+
+@Test func legacyAttachmentFieldsAreIgnoredWhenDecryptingPackages() async throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let keys = MemoryMeetingKeyStore()
+    let store = MeetingPackageStore(rootURL: root, keys: keys)
+    let meeting = Meeting(title: "Forward-compatible package")
+    try await store.create(meeting)
+
+    let generation = try await keys.generation(for: meeting.id)
+    let key = try await keys.key(for: meeting.id, purpose: .text)
+    let generationURL = root
+        .appending(path: meeting.id.uuidString)
+        .appending(path: generation.uuidString)
+    let manifestURL = generationURL.appending(path: "manifest.knt")
+    let textURL = generationURL.appending(path: "text.knt")
+
+    let manifestBox = try AES.GCM.SealedBox(combined: Data(contentsOf: manifestURL))
+    var manifest = try JSONSerialization.jsonObject(with: AES.GCM.open(
+        manifestBox,
+        using: key,
+        authenticating: packageAAD(meetingID: meeting.id, generation: generation, file: "manifest")
+    )) as! [String: Any]
+    manifest["attachmentIDs"] = [UUID().uuidString]
+    let manifestData = try JSONSerialization.data(withJSONObject: manifest)
+    guard let sealedManifest = try AES.GCM.seal(
+        manifestData,
+        using: key,
+        authenticating: packageAAD(meetingID: meeting.id, generation: generation, file: "manifest")
+    ).combined else {
+        throw MeetingStoreError.corrupted
+    }
+    try sealedManifest.write(to: manifestURL, options: .atomic)
+
+    let textBox = try AES.GCM.SealedBox(combined: Data(contentsOf: textURL))
+    var snapshot = try JSONSerialization.jsonObject(with: AES.GCM.open(
+        textBox,
+        using: key,
+        authenticating: packageAAD(meetingID: meeting.id, generation: generation, file: "text")
+    )) as! [String: Any]
+    snapshot["attachments"] = [["id": UUID().uuidString]]
+    let snapshotData = try JSONSerialization.data(withJSONObject: snapshot)
+    guard let sealedSnapshot = try AES.GCM.seal(
+        snapshotData,
+        using: key,
+        authenticating: packageAAD(meetingID: meeting.id, generation: generation, file: "text")
+    ).combined else {
+        throw MeetingStoreError.corrupted
+    }
+    try sealedSnapshot.write(to: textURL, options: .atomic)
+
+    #expect(try await store.snapshot(for: meeting.id) == MeetingSnapshot(meeting: meeting))
+}
+
+@Test func recoveryScrubsLegacyArtifactsWithoutReadingMeetingPayload() async throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let keys = MemoryMeetingKeyStore()
+    let store = MeetingPackageStore(rootURL: root, keys: keys)
+    let meeting = Meeting(title: "Legacy artifact recovery")
+    try await store.create(meeting)
+
+    let packageURL = root.appending(path: meeting.id.uuidString)
+    let artifactsURL = packageURL.appending(path: "attachments")
+    try FileManager.default.createDirectory(at: artifactsURL, withIntermediateDirectories: true)
+    try Data("legacy ciphertext".utf8).write(to: artifactsURL.appending(path: "legacy.knt"))
+    await keys.createRetiredKeyMaterial(for: meeting.id)
+
+    let generation = try await keys.generation(for: meeting.id)
+    let textURL = packageURL.appending(path: generation.uuidString).appending(path: "text.knt")
+    let corruptedPayload = Data("corrupted legacy payload".utf8)
+    try corruptedPayload.write(to: textURL, options: .atomic)
+
+    try await store.recoverInterruptedDeletions()
+    try await store.recoverInterruptedDeletions()
+
+    #expect(!FileManager.default.fileExists(atPath: artifactsURL.path))
+    #expect(!(await keys.hasRetiredKeyMaterial(for: meeting.id)))
+    #expect(FileManager.default.fileExists(atPath: packageURL.path))
+    let textKey = try await keys.key(for: meeting.id, purpose: .text)
+    #expect(textKey.withUnsafeBytes { !$0.isEmpty })
+    #expect(try Data(contentsOf: textURL) == corruptedPayload)
 }

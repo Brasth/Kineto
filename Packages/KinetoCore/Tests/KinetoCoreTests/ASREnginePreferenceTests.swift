@@ -21,6 +21,21 @@ import Testing
     #expect(RecognitionLanguagePreference(rawValue: japanese.rawValue) == japanese)
 }
 
+@Test func appleSpeechStatusNormalizesLegacyLanguageOnlyPickerValues() {
+    let status = AppleSpeechStatus(
+        isFrameworkAvailable: true,
+        locales: [
+            AppleSpeechLocale(identifier: "en-US", displayName: "English (United States)", assetState: .installed),
+            AppleSpeechLocale(identifier: "fr-FR", displayName: "French (France)", assetState: .available)
+        ],
+        notice: "Ready"
+    )
+
+    #expect(status.normalizedPreference(.english) == .apple(localeIdentifier: "en-US"))
+    #expect(status.normalizedPreference(.apple(localeIdentifier: "fr-FR")) == .apple(localeIdentifier: "fr-FR"))
+    #expect(status.normalizedPreference(.vietnamese) == .automatic)
+}
+
 @Test func appleSpeechStatusRoutesOnlySelectedInstalledRuntimeLocales() {
     let downloadable = AppleSpeechStatus(
         isFrameworkAvailable: true,

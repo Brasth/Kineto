@@ -36,6 +36,34 @@ enum AppleSpeechStreamerError: Error {
     case formatUnavailable
 }
 
+enum TranscriptText {
+    static func isMeaningful(_ text: String) -> Bool {
+        text.unicodeScalars.contains { CharacterSet.alphanumerics.contains($0) }
+    }
+}
+
+private final class PCMBufferInput: @unchecked Sendable {
+    private let lock = NSLock()
+    private let buffer: AVAudioPCMBuffer
+    private var supplied = false
+
+    init(buffer: AVAudioPCMBuffer) {
+        self.buffer = buffer
+    }
+
+    func next(status: UnsafeMutablePointer<AVAudioConverterInputStatus>) -> AVAudioBuffer? {
+        lock.withLock {
+            guard !supplied else {
+                status.pointee = .noDataNow
+                return nil
+            }
+            supplied = true
+            status.pointee = .haveData
+            return buffer
+        }
+    }
+}
+
 /// One capture-track Apple SpeechAnalyzer session with volatile + final results.
 actor AppleSpeechSourceSession {
     private let meetingID: UUID
@@ -44,18 +72,29 @@ actor AppleSpeechSourceSession {
     private let localeIdentifier: String
     private let store: MeetingPackageStore
     private let output: AsyncStream<TranscriptEvent>.Continuation
+    private let capability: AppleSpeechCapability
 
     private var analyzer: SpeechAnalyzer?
     private var input: AsyncStream<AnalyzerInput>.Continuation?
     private var resultsTask: Task<Void, Never>?
     private var analyzerFormat: AVAudioFormat?
     private var finished = false
+    private var requiresRestart = false
+    private var lastInputEndTime: TimeInterval = 0
+    private var recoveryTimestamp: TimeInterval?
+
+    enum InputOutcome {
+        case accepted
+        case discarded
+        case requiresRestart(TimeInterval)
+    }
 
     init(
         meetingID: UUID,
         source: AudioSource,
         language: SpokenLanguage,
         localeIdentifier: String,
+        capability: AppleSpeechCapability,
         store: MeetingPackageStore,
         output: AsyncStream<TranscriptEvent>.Continuation
     ) {
@@ -63,13 +102,13 @@ actor AppleSpeechSourceSession {
         self.source = source
         self.language = language
         self.localeIdentifier = localeIdentifier
+        self.capability = capability
         self.store = store
         self.output = output
     }
 
     func start() async throws {
         guard SpeechTranscriber.isAvailable else { throw AppleSpeechStreamerError.unavailable }
-        let capability = AppleSpeechCapability()
         let transcriber = try await capability.makeTranscriber(localeIdentifier: localeIdentifier)
 
         guard let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber]) else {
@@ -93,23 +132,29 @@ actor AppleSpeechSourceSession {
                 for try await result in transcriber.results {
                     await self.handle(result)
                 }
+                await self.markForRestart()
             } catch is CancellationError {
                 return
             } catch {
-                await self.emitFailed("apple-speech-results-failed")
+                await self.markForRestart()
             }
         }
 
         try await analyzer.start(inputSequence: stream)
     }
 
-    func push(frame: AudioFrame) {
-        guard !finished, let input, let analyzerFormat else { return }
+    func push(frame: AudioFrame) -> InputOutcome {
+        guard !finished, !requiresRestart, let input, let analyzerFormat else {
+            return .requiresRestart(recoveryTimestamp ?? frame.timestamp)
+        }
         guard let buffer = makePCMBuffer(samples: frame.samples, format: analyzerFormat) else {
-            return
+            return .discarded
         }
         let start = CMTime(seconds: max(0, frame.timestamp), preferredTimescale: 16_000)
+        lastInputEndTime = frame.timestamp
+            + TimeInterval(frame.samples.count) / AudioFrame.sampleRate
         input.yield(AnalyzerInput(buffer: buffer, bufferStartTime: start))
+        return .accepted
     }
 
     func finish() async {
@@ -117,7 +162,7 @@ actor AppleSpeechSourceSession {
         finished = true
         input?.finish()
         input = nil
-        if let analyzer {
+        if let analyzer, !requiresRestart {
             try? await analyzer.finalizeAndFinishThroughEndOfInput()
         }
         await resultsTask?.value
@@ -137,14 +182,27 @@ actor AppleSpeechSourceSession {
         clearVolatile()
     }
 
+    func recoveryGap() -> CaptureGap? {
+        guard requiresRestart else { return nil }
+        return CaptureGap(
+            source: source,
+            timestamp: recoveryTimestamp ?? lastInputEndTime,
+            reason: "speech-restarting"
+        )
+    }
+
     private func handle(_ result: SpeechTranscriber.Result) async {
         let text = String(result.text.characters)
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty || result.isFinal else { return }
-
         let start = max(0, CMTimeGetSeconds(result.range.start))
         let end = max(start, CMTimeGetSeconds(result.range.start + result.range.duration))
 
+        guard TranscriptText.isMeaningful(text) else {
+            if result.isFinal {
+                clearVolatile(start: start, end: end)
+            }
+            return
+        }
         if result.isFinal {
             let segment = Segment(
                 meetingID: meetingID,
@@ -195,8 +253,13 @@ actor AppleSpeechSourceSession {
         )
     }
 
-    private func emitFailed(_ reason: String) {
-        output.yield(.failed(reason))
+    private func markForRestart() {
+        guard !finished, !requiresRestart else { return }
+        requiresRestart = true
+        recoveryTimestamp = lastInputEndTime > 0 ? lastInputEndTime : nil
+        input?.finish()
+        input = nil
+        clearVolatile()
     }
 
     private func makePCMBuffer(samples: [Float], format: AVAudioFormat) -> AVAudioPCMBuffer? {
@@ -243,16 +306,10 @@ actor AppleSpeechSourceSession {
         guard let out = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity) else {
             return nil
         }
-        var supplied = false
+        let input = PCMBufferInput(buffer: sourceBuffer)
         var error: NSError?
         let status = converter.convert(to: out, error: &error) { _, inputStatus in
-            if supplied {
-                inputStatus.pointee = .noDataNow
-                return nil
-            }
-            supplied = true
-            inputStatus.pointee = .haveData
-            return sourceBuffer
+            input.next(status: inputStatus)
         }
         guard error == nil, status != .error else { return nil }
         return out
@@ -265,24 +322,31 @@ public actor AppleSpeechMeetingPipeline {
     private let localeIdentifier: String
     private let language: SpokenLanguage
     private let store: MeetingPackageStore
+    private let capability: AppleSpeechCapability
     private var sessions: [AudioSource: AppleSpeechSourceSession] = [:]
     private var consumer: Task<Void, Never>?
     private var output: AsyncStream<TranscriptEvent>.Continuation?
     private var cancelled = false
+    private var nextStartAttempt: [AudioSource: TimeInterval] = [:]
+    private var pendingRecoveryGaps: [AudioSource: CaptureGap] = [:]
 
     public init(
         meetingID: UUID,
         localeIdentifier: String,
         language: SpokenLanguage = .english,
+        capability: AppleSpeechCapability,
         store: MeetingPackageStore
     ) {
         self.meetingID = meetingID
         self.localeIdentifier = localeIdentifier
         self.language = language
+        self.capability = capability
         self.store = store
     }
 
     public func start(events: AsyncStream<CaptureEvent>) async throws -> AsyncStream<TranscriptEvent> {
+        nextStartAttempt.removeAll()
+        pendingRecoveryGaps.removeAll()
         let (stream, continuation) = AsyncStream<TranscriptEvent>.makeStream(bufferingPolicy: .unbounded)
         output = continuation
         cancelled = false
@@ -305,6 +369,8 @@ public actor AppleSpeechMeetingPipeline {
         for session in sessions.values {
             await session.cancel()
         }
+        nextStartAttempt.removeAll()
+        pendingRecoveryGaps.removeAll()
         sessions.removeAll()
         output?.finish()
         output = nil
@@ -314,11 +380,47 @@ public actor AppleSpeechMeetingPipeline {
         guard !cancelled, let output else { return }
         switch event {
         case let .audio(frame):
+            if frame.timestamp < nextStartAttempt[frame.source, default: 0] {
+                extendPendingRecoveryGap(with: frame)
+                return
+            }
             do {
                 let session = try await session(for: frame.source)
-                await session.push(frame: frame)
+                switch await session.push(frame: frame) {
+                case .accepted:
+                    await persistPendingRecoveryGap(for: frame.source)
+                    nextStartAttempt[frame.source] = nil
+                case .discarded:
+                    await persistPendingRecoveryGap(for: frame.source)
+                    await persistGap(
+                        CaptureGap(
+                            source: frame.source,
+                            timestamp: frame.timestamp,
+                            duration: frameDuration(for: frame),
+                            reason: "audio-frame-discarded"
+                        )
+                    )
+                case let .requiresRestart(timestamp):
+                    await session.cancel()
+                    sessions[frame.source] = nil
+                    beginRecoveryGap(
+                        source: frame.source,
+                        timestamp: timestamp,
+                        including: frame,
+                        reason: "speech-restarting"
+                    )
+                    nextStartAttempt[frame.source] = frame.timestamp + 1
+                }
             } catch {
-                output.yield(.failed("apple-speech-start-failed"))
+                beginRecoveryGap(
+                    source: frame.source,
+                    timestamp: frame.timestamp,
+                    including: frame,
+                    reason: pendingRecoveryGaps[frame.source] == nil
+                        ? "speech-start-failed"
+                        : "speech-restarting"
+                )
+                nextStartAttempt[frame.source] = frame.timestamp + 1
             }
         case let .gap(gap):
             await persistGap(gap)
@@ -341,12 +443,52 @@ public actor AppleSpeechMeetingPipeline {
             source: source,
             language: language,
             localeIdentifier: localeIdentifier,
+            capability: capability,
             store: store,
             output: output
         )
         try await created.start()
         sessions[source] = created
         return created
+    }
+
+    private func frameDuration(for frame: AudioFrame) -> TimeInterval {
+        TimeInterval(frame.samples.count) / AudioFrame.sampleRate
+    }
+
+    private func beginRecoveryGap(
+        source: AudioSource,
+        timestamp: TimeInterval,
+        including frame: AudioFrame,
+        reason: String
+    ) {
+        if pendingRecoveryGaps[source] != nil {
+            extendPendingRecoveryGap(with: frame)
+            return
+        }
+        let end = max(timestamp, frame.timestamp + frameDuration(for: frame))
+        pendingRecoveryGaps[source] = CaptureGap(
+            source: source,
+            timestamp: timestamp,
+            duration: end - timestamp,
+            reason: reason
+        )
+    }
+
+    private func extendPendingRecoveryGap(with frame: AudioFrame) {
+        guard let gap = pendingRecoveryGaps[frame.source] else { return }
+        let end = max(gap.timestamp + gap.duration, frame.timestamp + frameDuration(for: frame))
+        pendingRecoveryGaps[frame.source] = CaptureGap(
+            source: gap.source,
+            timestamp: gap.timestamp,
+            duration: end - gap.timestamp,
+            reason: gap.reason
+        )
+    }
+
+    private func persistPendingRecoveryGap(for source: AudioSource) async {
+        guard let gap = pendingRecoveryGaps.removeValue(forKey: source) else { return }
+        await persistGap(gap)
     }
 
     private func persistGap(_ sourceGap: CaptureGap) async {
@@ -369,8 +511,17 @@ public actor AppleSpeechMeetingPipeline {
     private func finishAll() async {
         for session in sessions.values {
             await session.finish()
+            if let recoveryGap = await session.recoveryGap(),
+               pendingRecoveryGaps[recoveryGap.source] == nil
+            {
+                pendingRecoveryGaps[recoveryGap.source] = recoveryGap
+            }
         }
         sessions.removeAll()
+        for source in Array(pendingRecoveryGaps.keys) {
+            await persistPendingRecoveryGap(for: source)
+        }
+        nextStartAttempt.removeAll()
         output?.finish()
         output = nil
         consumer = nil

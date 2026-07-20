@@ -4,11 +4,14 @@ import Speech
 public enum AppleSpeechCapabilityError: Error, Equatable {
     case unavailable
     case localeUnsupported
+    case reservationUnavailable
     case installFailed
 }
 
 /// Probes SpeechTranscriber locales and optional asset install (L3 Apple path).
 public actor AppleSpeechCapability {
+    private var reservedLocale: Locale?
+
     public init() {}
 
     public func status() async -> AppleSpeechStatus {
@@ -21,15 +24,23 @@ public actor AppleSpeechCapability {
         }
 
         let supported = await SpeechTranscriber.supportedLocales
-        let installed = await SpeechTranscriber.installedLocales
-        let locales = supported.map { locale in
-            AppleSpeechLocale(
-                identifier: locale.identifier,
-                displayName: Locale.current.localizedString(forIdentifier: locale.identifier) ?? locale.identifier,
-                assetState: installed.contains(where: { matches($0, locale.identifier) }) ? .installed : .available
+        var locales: [AppleSpeechLocale] = []
+        locales.reserveCapacity(supported.count)
+        for locale in supported {
+            let transcriber = makeTranscriber(for: locale)
+            let inventoryStatus = await AssetInventory.status(forModules: [transcriber])
+            locales.append(
+                AppleSpeechLocale(
+                    identifier: locale.identifier,
+                    displayName: Locale.current.localizedString(forIdentifier: locale.identifier)
+                        ?? locale.identifier,
+                    assetState: Self.localeAssetState(for: inventoryStatus)
+                )
             )
         }
-        .sorted { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }
+        locales.sort {
+            $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending
+        }
 
         let notice: String
         if locales.isEmpty {
@@ -52,13 +63,11 @@ public actor AppleSpeechCapability {
             throw AppleSpeechCapabilityError.localeUnsupported
         }
 
-        let transcriber = SpeechTranscriber(
-            locale: locale,
-            transcriptionOptions: [],
-            reportingOptions: [.volatileResults, .fastResults],
-            attributeOptions: [.audioTimeRange]
-        )
-        if let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
+        try await reserveSelectedLocale(locale)
+        let transcriber = makeTranscriber(for: locale)
+        if let request = try await AssetInventory.assetInstallationRequest(
+            supporting: [transcriber]
+        ) {
             try await request.downloadAndInstall()
         }
         return await status()
@@ -69,17 +78,12 @@ public actor AppleSpeechCapability {
         guard let locale = await equivalent(to: localeIdentifier) else {
             throw AppleSpeechCapabilityError.localeUnsupported
         }
-        let installed = await SpeechTranscriber.installedLocales
-        let id = locale.identifier(.bcp47)
-        guard installed.contains(where: { $0.identifier(.bcp47) == id || $0.identifier == locale.identifier }) else {
+        try await reserveSelectedLocale(locale)
+        let transcriber = makeTranscriber(for: locale)
+        guard await AssetInventory.status(forModules: [transcriber]) == .installed else {
             throw AppleSpeechCapabilityError.localeUnsupported
         }
-        return SpeechTranscriber(
-            locale: locale,
-            transcriptionOptions: [],
-            reportingOptions: [.volatileResults, .fastResults],
-            attributeOptions: [.audioTimeRange]
-        )
+        return transcriber
     }
 
 
@@ -91,6 +95,68 @@ public actor AppleSpeechCapability {
         }
         let supported = await SpeechTranscriber.supportedLocales
         return supported.first { matches($0, identifier) }
+    }
+
+    private func makeTranscriber(for locale: Locale) -> SpeechTranscriber {
+        SpeechTranscriber(
+            locale: locale,
+            transcriptionOptions: [],
+            reportingOptions: [.volatileResults, .fastResults],
+            attributeOptions: [.audioTimeRange]
+        )
+    }
+
+    private static func localeAssetState(
+        for status: AssetInventory.Status
+    ) -> LocaleAssetState {
+        switch status {
+        case .installed:
+            .installed
+        case .supported, .downloading:
+            .available
+        case .unsupported:
+            .unsupported
+        @unknown default:
+            .unsupported
+        }
+    }
+
+    /// Retains only the currently selected locale so changing languages cannot
+    /// exhaust Speech's finite reservation quota.
+    private func reserveSelectedLocale(_ locale: Locale) async throws {
+        if let reservedLocale, Self.sameLocale(reservedLocale, locale) {
+            return
+        }
+
+        let previousLocale = reservedLocale
+        if let previousLocale {
+            _ = await AssetInventory.release(reservedLocale: previousLocale)
+            reservedLocale = nil
+        }
+
+        let existingReservations = await AssetInventory.reservedLocales
+        if let existing = existingReservations.first(where: { Self.sameLocale($0, locale) }) {
+            reservedLocale = existing
+            return
+        }
+
+        do {
+            guard try await AssetInventory.reserve(locale: locale) else {
+                throw AppleSpeechCapabilityError.reservationUnavailable
+            }
+            reservedLocale = locale
+        } catch {
+            if let previousLocale,
+               (try? await AssetInventory.reserve(locale: previousLocale)) == true {
+                reservedLocale = previousLocale
+            }
+            throw error
+        }
+    }
+
+    private static func sameLocale(_ lhs: Locale, _ rhs: Locale) -> Bool {
+        lhs.identifier(.bcp47)
+            .caseInsensitiveCompare(rhs.identifier(.bcp47)) == .orderedSame
     }
 
 

@@ -67,6 +67,7 @@ public struct MeetingSnapshot: Codable, Equatable, Sendable {
 }
 
 public actor MeetingPackageStore {
+
     private struct Manifest: Codable {
         let version: Int
         let generation: UUID
@@ -125,6 +126,24 @@ public actor MeetingPackageStore {
                 : try values.decode([UUID].self, forKey: .chatTurnIDs)
             hasSummary = try values.decode(Bool.self, forKey: .hasSummary)
             retainsAudio = try values.decode(Bool.self, forKey: .retainsAudio)
+        }
+    }
+
+    private struct TranscriptExport: Encodable {
+        let meeting: Meeting
+        let segments: [Segment]
+        let gaps: [TranscriptGap]
+        let translations: [TranslationRecord]
+        let summary: SummaryRecord?
+        let chatTurns: [ChatTurnRecord]
+
+        init(_ snapshot: MeetingSnapshot) {
+            meeting = snapshot.meeting
+            segments = snapshot.segments
+            gaps = snapshot.gaps
+            translations = snapshot.translations
+            summary = snapshot.summary
+            chatTurns = snapshot.chatTurns
         }
     }
 
@@ -259,6 +278,7 @@ public actor MeetingPackageStore {
         }
     }
 
+
     private func updateStateUnlocked(_ state: MeetingState, for meetingID: UUID) async throws {
         try ensureNotDeleting(meetingID)
         var value = try await snapshot(for: meetingID)
@@ -369,7 +389,7 @@ public actor MeetingPackageStore {
 
     public func export(meetingID: UUID, to destination: URL) async throws {
         let value = try await snapshot(for: meetingID)
-        let data = try encoder.encode(value)
+        let data = try encoder.encode(TranscriptExport(value))
         try data.write(to: destination, options: [.atomic, .completeFileProtection])
     }
 
@@ -421,8 +441,38 @@ public actor MeetingPackageStore {
             try fileManager.removeItem(at: stageURL)
             try syncDirectory(rootURL)
         }
+        for meetingID in try meetingIDs() {
+            try await mutationMutex.withLock {
+                try await self.recoverInterruptedCommitArtifacts(for: meetingID)
+                try await self.removeRetiredPackageArtifacts(for: meetingID)
+            }
+        }
     }
 
+    private func recoverInterruptedCommitArtifacts(for meetingID: UUID) async throws {
+        let packageURL = packageURL(for: meetingID)
+        let stages = try fileManager.contentsOfDirectory(
+            at: packageURL,
+            includingPropertiesForKeys: nil,
+            options: []
+        ).filter { $0.lastPathComponent.hasPrefix(".stage-") }
+        for stageURL in stages {
+            try fileManager.removeItem(at: stageURL)
+        }
+        if !stages.isEmpty {
+            try syncDirectory(packageURL)
+        }
+    }
+
+    private func removeRetiredPackageArtifacts(for meetingID: UUID) async throws {
+        let packageURL = packageURL(for: meetingID)
+        let retiredArtifactsURL = packageURL.appending(path: "attachments", directoryHint: .isDirectory)
+        if fileManager.fileExists(atPath: retiredArtifactsURL.path) {
+            try fileManager.removeItem(at: retiredArtifactsURL)
+            try syncDirectory(packageURL)
+        }
+        try await keys.removeRetiredKeyMaterial(for: meetingID)
+    }
     private func finishDeletion(meetingID: UUID) async throws {
         try await keys.deleteKeys(for: meetingID)
         let packageURL = packageURL(for: meetingID)
@@ -445,7 +495,7 @@ public actor MeetingPackageStore {
         let generationURL = packageURL.appending(path: generation.uuidString)
         let key = try await keys.key(for: meetingID, purpose: .text)
         let manifest = Manifest(
-            version: 2,
+            version: 3,
             generation: generation,
             meetingID: meetingID,
             segmentIDs: snapshot.segments.map(\.id),
@@ -484,7 +534,7 @@ public actor MeetingPackageStore {
         meetingID: UUID,
         generation: UUID
     ) throws {
-        guard manifest.version == 1 || manifest.version == 2,
+        guard (1...3).contains(manifest.version),
               manifest.generation == generation,
               manifest.meetingID == meetingID,
               snapshot.meeting.id == meetingID,
@@ -508,6 +558,7 @@ public actor MeetingPackageStore {
             try validate(chatTurn: chatTurn, in: snapshot)
         }
     }
+
 
     private func validate(chatTurn: ChatTurnRecord, in snapshot: MeetingSnapshot) throws {
         guard chatTurn.meetingID == snapshot.meeting.id,
@@ -610,6 +661,7 @@ public actor MeetingPackageStore {
     private func context(meetingID: UUID, generation: UUID, file: String) -> Data {
         Data("kineto/v1/\(meetingID.uuidString)/\(generation.uuidString)/\(file)".utf8)
     }
+
 
     private func packageURL(for meetingID: UUID) -> URL {
         rootURL.appending(path: meetingID.uuidString, directoryHint: .isDirectory)
