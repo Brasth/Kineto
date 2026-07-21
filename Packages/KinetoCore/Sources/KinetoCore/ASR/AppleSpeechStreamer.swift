@@ -190,7 +190,6 @@ actor AppleSpeechSourceSession {
             reason: "speech-restarting"
         )
     }
-
     private func handle(_ result: SpeechTranscriber.Result) async {
         let text = String(result.text.characters)
             .trimmingCharacters(in: .whitespacesAndNewlines)

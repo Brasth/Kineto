@@ -359,7 +359,14 @@ public actor TranscriptCoordinator {
                     storeMs = milliseconds(since: storeStarted)
                 } catch {
                     if !cancelled {
-                        output?.yield(.failed("segment-persistence-failed"))
+                        await persistGap(
+                            CaptureGap(
+                                source: job.source,
+                                timestamp: job.startTime,
+                                duration: TimeInterval(job.samples.count) / AudioFrame.sampleRate,
+                                reason: "segment-persistence-failed"
+                            )
+                        )
                     }
                     return
                 }

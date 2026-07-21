@@ -619,6 +619,11 @@ struct HomeView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(model.isBusy)
+                Button("Start New Meeting (discard)", systemImage: "plus") {
+                    Task { await model.newMeeting() }
+                }
+                .buttonStyle(.bordered)
+                .disabled(model.isBusy)
             } else {
                 ProgressView().controlSize(.large)
                 Text(model.processingStatus)
