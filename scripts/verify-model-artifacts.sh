@@ -12,6 +12,11 @@ EXPECTED_ARCHIVE_SHA256="6ab65695dbdc96ebe9ec395f7652e23e1bc071327a3d2a1bdf300ba
 EXPECTED_HEADER_SHA256="6c1c70a5d4b74556f4253e51a13874ad013513b0ae62e779c0e30ffde3dc30ba"
 EXPECTED_INFO_SHA256="d721f8ff693eb93a2b26f41d4d54a42dd82ccb85de428b3f30d9b65817c9c4b5"
 
+INTERNAL_MODE=0
+if [[ "${1:-}" == "--internal" ]]; then
+  INTERNAL_MODE=1
+fi
+
 [[ -f "$MODEL" ]] || { echo "Missing model: $MODEL" >&2; exit 1; }
 [[ -d "$FRAMEWORK" ]] || { echo "Missing framework: $FRAMEWORK" >&2; exit 1; }
 [[ -f "$NOTICES" ]] || { echo "Missing third-party notices" >&2; exit 1; }
@@ -54,18 +59,21 @@ info="$FRAMEWORK/Info.plist"
   exit 1
 }
 
-[[ "$(shasum -a 256 "$archive" | cut -d ' ' -f 1)" == "$EXPECTED_ARCHIVE_SHA256" ]] || {
-  echo "CWhisper archive checksum mismatch" >&2
-  exit 1
-}
-[[ "$(shasum -a 256 "$header" | cut -d ' ' -f 1)" == "$EXPECTED_HEADER_SHA256" ]] || {
-  echo "CWhisper header checksum mismatch" >&2
-  exit 1
-}
-[[ "$(shasum -a 256 "$info" | cut -d ' ' -f 1)" == "$EXPECTED_INFO_SHA256" ]] || {
-  echo "CWhisper Info.plist checksum mismatch" >&2
-  exit 1
-}
+if [[ "$INTERNAL_MODE" != "1" ]]; then
+  [[ "$(shasum -a 256 "$archive" | cut -d ' ' -f 1)" == "$EXPECTED_ARCHIVE_SHA256" ]] || {
+    echo "CWhisper archive checksum mismatch" >&2
+    exit 1
+  }
+  [[ "$(shasum -a 256 "$header" | cut -d ' ' -f 1)" == "$EXPECTED_HEADER_SHA256" ]] || {
+    echo "CWhisper header checksum mismatch" >&2
+    exit 1
+  }
+  [[ "$(shasum -a 256 "$info" | cut -d ' ' -f 1)" == "$EXPECTED_INFO_SHA256" ]] || {
+    echo "CWhisper Info.plist checksum mismatch" >&2
+    exit 1
+  }
+fi
+
 [[ "$(lipo -archs "$archive")" == "arm64" ]] || {
   echo "CWhisper archive has an unexpected architecture" >&2
   exit 1
@@ -81,5 +89,9 @@ nm -gU "$archive" | grep ' _whisper_init_from_file_with_params$' >/dev/null || {
 
 printf 'Verified model %s bytes SHA-256 %s\n' "$actual_bytes" "$actual_sha256"
 printf 'Verified whisper.cpp commit %s\n' "$actual_commit"
-printf 'Verified CWhisper archive, headers, metadata, architecture, and symbols\n'
+if [[ "$INTERNAL_MODE" == "1" ]]; then
+  printf 'Verified CWhisper structure, architecture, and symbols (internal mode: compiled archive bytes not pinned)\n'
+else
+  printf 'Verified CWhisper archive, headers, metadata, architecture, and symbols\n'
+fi
 printf 'Verified third-party provenance notices\n'

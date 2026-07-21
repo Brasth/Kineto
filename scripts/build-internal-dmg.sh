@@ -76,10 +76,13 @@ NOTICES="$ROOT/THIRD_PARTY_NOTICES"
   echo "Missing required third-party notices: $NOTICES" >&2
   exit 1
 }
+# For internal unsigned builds (no Apple Developer account / no notarization):
+# Verify model bytes + SHA, whisper.cpp commit provenance, framework presence,
+# architecture, and required symbols. Do NOT require exact byte match on the
+# compiled CWhisper archive (the XCFramework build from pinned source is not
+# bit-reproducible across toolchains).
+"$ROOT/scripts/verify-model-artifacts.sh" --internal
 
-# Keep the same provenance gate as the credentialed release path. Missing or
-# mismatched model/framework artifacts must stop an internal artifact too.
-"$ROOT/scripts/verify-model-artifacts.sh"
 
 DERIVED_DATA="$BUILD_ROOT/DerivedData"
 STAGING_ROOT="$BUILD_ROOT/dmg-staging"

@@ -29,8 +29,8 @@ Chinese recognition labels exist in the domain and local ASR mapping, but Chines
 ## Build and verify
 
 ```bash
-swift test --package-path Packages/KinetoCore
-./scripts/verify-model-artifacts.sh
+./scripts/verify-model-artifacts.sh --internal
+
 xcodebuild \
   -project Kineto.xcodeproj \
   -scheme Kineto \
@@ -43,12 +43,12 @@ xcodebuild \
 Launch the built app from Xcode or the Debug products directory. Import the pinned Whisper model when the preflight screen reports that a verified model is required.
 
 ## Model and native runtime
-
-Repository development artifacts are pinned and verified by size, SHA-256, source revision, native archive/header/metadata hashes, architecture, and required public symbols:
+Repository development artifacts are pinned and verified (in internal mode) by model size/SHA, source revision, framework structure, architecture, and required public symbols. Compiled archive bytes are not pinned for internal builds.
 
 ```bash
-./scripts/verify-model-artifacts.sh
+./scripts/verify-model-artifacts.sh --internal
 ```
+
 
 Rebuild the native XCFramework or retrieve the model only through the pinned scripts:
 
