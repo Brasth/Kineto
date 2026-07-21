@@ -123,11 +123,12 @@ private func sealForPackage<T: Encodable>(
     defer { try? FileManager.default.removeItem(at: root) }
     let keys = MemoryMeetingKeyStore()
     let store = MeetingPackageStore(rootURL: root, keys: keys)
-    let meeting = Meeting(title: "Bilingual planning", retainsAudio: false)
+    let meeting = Meeting(title: "Bilingual planning", retainsAudio: false, activeSources: [.selectedSource])
 
     try await store.create(meeting)
     let empty = try await store.snapshot(for: meeting.id)
     #expect(empty.meeting == meeting)
+    #expect(empty.meeting.activeSources == [.selectedSource])
     #expect(empty.segments.isEmpty)
 
     let volatile = Segment(

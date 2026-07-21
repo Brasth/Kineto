@@ -15,16 +15,19 @@ final class FloatingCaptionPanelCoordinator {
     private var lastDeliveryDate: Date?
     private var captionDragStartOrigin: CGPoint?
     private var companionDragStartOrigin: CGPoint?
+    private var companionDragStartMouse: CGPoint?
     private var presentationDeferredForDrag = false
     private var companionSize = CGSize.zero
     private weak var observedModel: AppModel?
     private var performAction: (SignalGateAction) -> Void = { _ in }
     private var observationGeneration = 0
+    private var shouldEmphasizeEntrance = false
 
     init() {
         hostingView = NSHostingView(rootView: FloatingCaptionView(
             presentation: .hidden,
-            width: Self.defaultWidth
+            width: Self.defaultWidth,
+            emphasizeEntrance: false
         ))
         panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: Self.defaultWidth, height: 1),
@@ -97,6 +100,10 @@ final class FloatingCaptionPanelCoordinator {
             hide()
             return
         }
+        // One-shot entrance emphasis on first visible delivery after not having one
+        if displayedPresentation == nil || !displayedPresentation!.isVisible {
+            shouldEmphasizeEntrance = true
+        }
         pendingPresentation = presentation
         guard deliveryTask == nil else { return }
 
@@ -123,10 +130,12 @@ final class FloatingCaptionPanelCoordinator {
         displayedPresentation = nil
         captionDragStartOrigin = nil
         companionDragStartOrigin = nil
+        companionDragStartMouse = nil
         presentationDeferredForDrag = false
         companionSize = .zero
+        shouldEmphasizeEntrance = false
         companionPanel.orderOut()
-        hostingView.rootView = rootView(for: .hidden, width: captionWidth(for: displayScreen()))
+        hostingView.rootView = rootView(for: .hidden, width: captionWidth(for: displayScreen()), emphasizeEntrance: false)
         panel.orderOut(nil)
     }
 
@@ -139,10 +148,16 @@ final class FloatingCaptionPanelCoordinator {
         pendingPresentation = nil
         lastDeliveryDate = Date()
 
+        let emphasize = shouldEmphasizeEntrance
+        if emphasize {
+            shouldEmphasizeEntrance = false
+        }
+
         let screen = displayScreen()
         hostingView.rootView = rootView(
             for: presentation,
-            width: captionWidth(for: screen)
+            width: captionWidth(for: screen),
+            emphasizeEntrance: emphasize
         )
         panel.setContentSize(hostingView.fittingSize)
 
@@ -168,13 +183,15 @@ final class FloatingCaptionPanelCoordinator {
 
     private func rootView(
         for presentation: FloatingCaptionOverlayPresentation,
-        width: CGFloat
+        width: CGFloat,
+        emphasizeEntrance: Bool = false
     ) -> FloatingCaptionView {
         FloatingCaptionView(
             presentation: presentation.caption,
             width: width,
             signalGatePresentation: presentation.signalGatePresentation,
             isContentSuppressed: dragSession.shouldSuppressCaption,
+            emphasizeEntrance: emphasizeEntrance,
             onPanelDragChanged: { [weak self] in self?.updateCaptionDrag($0) },
             onPanelDragEnded: { [weak self] in self?.endPanelDrag(.captionHeader) },
             onActionIntent: { [weak self] in self?.handleActionIntent($0) }
@@ -201,37 +218,45 @@ final class FloatingCaptionPanelCoordinator {
         let wasSuppressingCaption = dragSession.shouldSuppressCaption
         dragSession.begin(.companion)
         guard dragSession.source == .companion else { return }
+
         if !wasSuppressingCaption {
             replaceCaptionRootView()
         }
-        if companionDragStartOrigin == nil {
-            companionDragStartOrigin = companionPanel.frame.origin
-        }
-        let start = companionDragStartOrigin ?? companionPanel.frame.origin
-        let companionOrigin = CGPoint(
-            x: start.x + translation.width,
-            y: start.y - translation.height
-        )
-        moveCaption(
-            to: FloatingCaptionPanelPlacement.captionOrigin(
-                companionOrigin: companionOrigin,
-                captionSize: panel.frame.size,
-                companionSize: companionSize,
-                verticalGap: Self.companionGap
-            )
-        )
-    }
 
-    private func moveCaption(to proposedOrigin: CGPoint) {
-        guard let screen = screen(for: linkedFrame(origin: proposedOrigin)) ?? displayScreen() else {
-            return
-        }
-        panel.setFrameOrigin(FloatingCaptionPanelPlacement.clamp(
-            origin: proposedOrigin,
+        let currentMouse = NSEvent.mouseLocation
+
+        // Always keep the visual center of the pet sprite directly under the mouse.
+        // This is the most intuitive "grab the pet" behavior.
+        let half = companionSize.width / 2
+        let companionOrigin = CGPoint(
+            x: currentMouse.x - half,
+            y: currentMouse.y - half
+        )
+
+        // Derive the caption panel position that maintains the linked layout (pet above caption).
+        let desiredCaption = FloatingCaptionPanelPlacement.captionOrigin(
+            companionOrigin: companionOrigin,
+            captionSize: panel.frame.size,
+            companionSize: companionSize,
+            verticalGap: Self.companionGap
+        )
+
+        // Move the main caption panel.
+        let linkedSize = FloatingCaptionPanelPlacement.linkedSize(
+            captionSize: panel.frame.size,
+            companionSize: companionSize,
+            verticalGap: Self.companionGap
+        )
+        let screen = displayScreen() ?? NSScreen.main!
+        let clamped = FloatingCaptionPanelPlacement.clamp(
+            origin: desiredCaption,
             visibleFrame: screen.visibleFrame,
-            panelSize: linkedPanelSize
-        ))
-        synchronizeCompanionPosition()
+            panelSize: linkedSize
+        )
+        panel.setFrameOrigin(clamped)
+
+        // Directly set the companion. We are the source of truth while dragging the pet.
+        companionPanel.setFrameOrigin(companionOrigin)
     }
 
     private func endPanelDrag(_ source: FloatingCaptionDragSource) {
@@ -239,6 +264,7 @@ final class FloatingCaptionPanelCoordinator {
         dragSession.end()
         captionDragStartOrigin = nil
         companionDragStartOrigin = nil
+        companionDragStartMouse = nil
         if let screen = screen(for: linkedFrame(origin: panel.frame.origin)) ?? displayScreen(),
            let displayID = displayID(for: screen)
         {
@@ -262,6 +288,18 @@ final class FloatingCaptionPanelCoordinator {
             for: displayedPresentation,
             width: panel.frame.width
         )
+    }
+
+    private func moveCaption(to proposedOrigin: CGPoint) {
+        guard let screen = screen(for: linkedFrame(origin: proposedOrigin)) ?? displayScreen() else {
+            return
+        }
+        panel.setFrameOrigin(FloatingCaptionPanelPlacement.clamp(
+            origin: proposedOrigin,
+            visibleFrame: screen.visibleFrame,
+            panelSize: linkedPanelSize
+        ))
+        synchronizeCompanionPosition()
     }
 
     func resetCaptionPosition() {
@@ -318,6 +356,11 @@ final class FloatingCaptionPanelCoordinator {
     }
 
     private func synchronizeCompanionPosition() {
+        // While actively dragging the pet (companion), we are directly driving its position
+        // for the best "under the cursor" and smooth feel. Normal sync would override it.
+        if dragSession.source == .companion {
+            return
+        }
         guard companionSize != .zero else { return }
         companionPanel.setFrameOrigin(FloatingCaptionPanelPlacement.companionOrigin(
             captionFrame: panel.frame,
@@ -333,7 +376,6 @@ final class FloatingCaptionPanelCoordinator {
             ?? NSScreen.main
             ?? NSScreen.screens.first
     }
-
     private func screen(for frame: CGRect) -> NSScreen? {
         let center = CGPoint(x: frame.midX, y: frame.midY)
         if let screen = NSScreen.screens.first(where: { $0.visibleFrame.contains(center) }) {

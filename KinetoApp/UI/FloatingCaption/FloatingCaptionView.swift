@@ -8,12 +8,16 @@ struct FloatingCaptionView: View {
     let onPanelDragChanged: (CGSize) -> Void
     let onPanelDragEnded: () -> Void
     let onActionIntent: (SignalGateAction) -> Void
+    let emphasizeEntrance: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(
         presentation: FloatingCaptionPresentation,
         width: CGFloat,
         signalGatePresentation: SignalGatePresentation = SignalGatePresentation(phase: .hidden),
         isContentSuppressed: Bool = false,
+        emphasizeEntrance: Bool = false,
         onPanelDragChanged: @escaping (CGSize) -> Void = { _ in },
         onPanelDragEnded: @escaping () -> Void = {},
         onActionIntent: @escaping (SignalGateAction) -> Void = { _ in }
@@ -22,26 +26,72 @@ struct FloatingCaptionView: View {
         self.signalGatePresentation = signalGatePresentation
         self.width = width
         self.isContentSuppressed = isContentSuppressed
+        self.emphasizeEntrance = emphasizeEntrance
         self.onPanelDragChanged = onPanelDragChanged
         self.onPanelDragEnded = onPanelDragEnded
         self.onActionIntent = onActionIntent
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            FloatingCaptionHeaderView(
-                presentation: presentation.header,
-                onPanelDragChanged: onPanelDragChanged,
-                onPanelDragEnded: onPanelDragEnded
+        let isEmphasized = emphasizeEntrance
+
+        VStack(alignment: .leading, spacing: 0) {
+            // Dedicated drag handle bar at the very top – clear visual affordance for moving the panel
+            HStack {
+                // Prominent drag grip (thicker, more obvious)
+                HStack(spacing: 3) {
+                    ForEach(0..<3) { _ in
+                        Capsule()
+                            .fill(.white.opacity(0.85))
+                            .frame(width: 20, height: 3)
+                    }
+                }
+                .padding(.leading, 8)
+                .accessibilityLabel("Drag to move floating captions")
+                .accessibilityHint("Drag this bar to reposition the panel.")
+
+                Spacer()
+            }
+            .frame(height: 22)
+            .background(.black.opacity(0.35))
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { onPanelDragChanged($0.translation) }
+                    .onEnded { _ in onPanelDragEnded() }
             )
 
-            FloatingCaptionControlsView(
-                presentation: signalGatePresentation,
-                onActionIntent: onActionIntent
-            )
+            // Top status + controls zone
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    // Prominent REC indicator
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(Color.red)
+                            .frame(width: isEmphasized ? 10 : 8, height: isEmphasized ? 10 : 8)
+                        Text("REC")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(Color.red)
+                    }
+                    .accessibilityLabel("Recording active")
 
-            VStack(alignment: .leading, spacing: 8) {
-                Spacer(minLength: 0)
+                    Text(presentation.header.captureStatus.title)
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.white.opacity(0.85))
+
+                    Spacer(minLength: 4)
+                }
+
+                FloatingCaptionControlsView(
+                    presentation: signalGatePresentation,
+                    onActionIntent: onActionIntent
+                )
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+
+            // Transcript zone — comfortable, high contrast, compact
+            VStack(alignment: .leading, spacing: 4) {
                 ForEach(presentation.lines) { line in
                     FloatingCaptionLineView(
                         line: line,
@@ -51,22 +101,34 @@ struct FloatingCaptionView: View {
             }
             .frame(
                 maxWidth: .infinity,
-                minHeight: 68,
+                minHeight: 45,
                 alignment: .bottomLeading
             )
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
             .allowsHitTesting(false)
             .transaction { transaction in
                 transaction.animation = nil
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 14)
         .frame(width: width, alignment: .leading)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.black.opacity(0.82))
+                .background(.regularMaterial)
+        )
+        .overlay(alignment: .leading) {
+            Rectangle()
+                .fill(Color.mint)
+                .frame(width: isEmphasized ? 5 : 3)
+                .padding(.vertical, 2)
+        }
         .overlay {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(.separator.opacity(0.3))
+                .stroke(isEmphasized ? Color.mint.opacity(0.9) : Color.white.opacity(0.15), lineWidth: isEmphasized ? 2 : 1)
+                .opacity(isEmphasized ? 0.9 : 0.7)
         }
+        .colorScheme(.dark)
         .fixedSize(horizontal: false, vertical: true)
         .opacity(isContentSuppressed ? 0 : 1)
         .allowsHitTesting(!isContentSuppressed)
@@ -74,41 +136,13 @@ struct FloatingCaptionView: View {
         .transaction { transaction in
             transaction.animation = nil
         }
-    }
-}
-
-private struct FloatingCaptionHeaderView: View {
-    let presentation: FloatingCaptionHeaderPresentation
-    let onPanelDragChanged: (CGSize) -> Void
-    let onPanelDragEnded: () -> Void
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Label(presentation.captureStatus.title, systemImage: presentation.captureStatus.symbolName)
-                .font(.caption2.weight(.medium))
-                .foregroundStyle(
-                    presentation.captureStatus == .capturing
-                        ? Color.red.opacity(0.82)
-                        : Color.secondary
-                )
-                .accessibilityLabel("Capture status: \(presentation.captureStatus.title)")
-
-            Spacer(minLength: 4)
-        }
-        .padding(.horizontal, 2)
-        .frame(maxWidth: .infinity)
-        .frame(height: 24)
-        .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-        .gesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { onPanelDragChanged($0.translation) }
-                .onEnded { _ in onPanelDragEnded() }
+        .scaleEffect(isEmphasized ? 1.02 : 1.0)
+        .opacity(isEmphasized ? 0.97 : 1.0)
+        .animation(
+            isEmphasized && !reduceMotion ? .easeOut(duration: 0.2) : nil,
+            value: isEmphasized
         )
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Caption capture header")
-        .accessibilityHint("Drag this header to move captions.")
     }
-
 }
 
 private struct FloatingCaptionControlsView: View {
@@ -134,6 +168,7 @@ private struct FloatingCaptionControlsView: View {
         .buttonStyle(.bordered)
         .controlSize(.small)
         .font(.caption.weight(.medium))
+        .foregroundStyle(.white)
     }
 
     @ViewBuilder
@@ -191,7 +226,7 @@ private struct FloatingCaptionLineView: View {
             HStack(spacing: 5) {
                 Text(line.sourceLabel)
                     .font(.caption2.weight(isActive ? .semibold : .medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.white.opacity(0.7))
                 if isActive {
                     Text("Live")
                         .font(.caption2.weight(.semibold))
@@ -200,17 +235,15 @@ private struct FloatingCaptionLineView: View {
             }
 
             Text(line.text)
-                .font(isActive ? .title3.weight(.semibold) : .body)
-                .foregroundStyle(
-                    isActive ? Color.mint : (line.isVolatile ? .secondary : .primary)
-                )
+                .font(isActive ? .body.weight(.medium) : .caption)
+                .foregroundStyle(isActive ? Color.mint : .white)
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
 
             if let translation = line.translation {
                 Text(translation)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.8))
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
             }
