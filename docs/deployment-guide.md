@@ -108,20 +108,19 @@ test "$(tr -d '[:space:]' < Binaries/CWhisper.xcframework/WHISPER_CPP_COMMIT)" \
 
 The build script clones only the pinned commit, compiles a static arm64 library with Metal enabled and macOS 26.1 as the deployment target, then records provenance in `Binaries/CWhisper.xcframework/WHISPER_CPP_COMMIT`. Release approval additionally requires an independent pinned-source rebuild and byte/provenance/license comparison; a successful local script run alone is insufficient.
 
-### Known repository gate defects
+### Artifact gate
 
-Do not bypass these failures or describe the release gate as passing:
-
-- `scripts/verify-model-artifacts.sh` contains model SHA-256 `39421709…`, which disagrees with `ModelDescriptor.swift`, the download script, and the checked-in `.sha256` file (`394221709…`).
-- The same verifier expects whisper commit `f0499fff95a089aa9969deb009cdd4892ba374916`, while the framework build script and checked-in provenance contain `f0499fff95a089aa9969deb009cdd4892b3e74916`.
-
-Consequently, this intended gate currently fails even for the repository’s pinned artifacts:
+The verifier records the exact model and CWhisper framework bytes used by this
+checkout. Run it before any internal or public DMG build, and do not bypass a
+failure:
 
 ```bash
 ./scripts/verify-model-artifacts.sh
 ```
 
-The constants must be reconciled in source and independently verified before any release build. This guide records the blocker; it does not authorize skipping the script.
+The gate must pass before release work proceeds. A passing local gate still
+does not establish independent provenance review, signing, notarization,
+Gatekeeper acceptance, or public-release readiness.
 
 ## Package and application builds
 
