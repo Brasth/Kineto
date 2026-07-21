@@ -18,8 +18,8 @@ The main app is sandboxed with microphone and user-selected-file access only. `K
 | `Config/Release.xcconfig` | Optimized validated Release settings |
 | `Config/ExportOptions.plist` | Automatic Developer ID archive export |
 | `scripts/download-whisper-model.sh` | Pinned model acquisition and verification |
-| `scripts/build-whisper-xcframework.sh` | Pinned whisper.cpp XCFramework build |
-| `scripts/verify-model-artifacts.sh` | Intended release artifact gate; see known blockers |
+| `scripts/verify-model-artifacts.sh` | Verifies model + whisper provenance (supports --internal for unsigned builds) |
+
 | `scripts/build-release-dmg.sh` | Archive, export, DMG, notarization, Gatekeeper, digest |
 | `scripts/build-internal-dmg.sh` | Internal unsigned/ad-hoc DMG packaging with `create-dmg` |
 | `.github/workflows/internal-dmg.yml` | Main/tag GitHub Actions workflow for internal unsigned DMG artifacts |
@@ -38,8 +38,8 @@ npm install --global create-dmg@8.1.0
 The script builds an arm64 Release app without signing credentials, runs the pinned model/runtime verifier, creates the unsigned DMG with `create-dmg --no-code-sign`, embeds `THIRD_PARTY_NOTICES`, and writes a SHA-256 sidecar under `build/internal-dmg/`. Outputs are internal artifacts only: they are unsigned, not notarized, not stapled, and must not be presented as public releases.
 
 `.github/workflows/internal-dmg.yml` runs the same path on pushes to `main` and `vMAJOR.MINOR.PATCH` tags. It uses a macOS 26 arm64 runner, Node 20, and `create-dmg` 8.1.0. It has no Apple signing or notarization secrets and does not invoke `scripts/build-release-dmg.sh`.
+This workflow runs the verifier in internal mode (`--internal`). It requires the pinned model (exact size + SHA-256), the correct whisper.cpp commit, and a structurally valid CWhisper XCFramework (arm64 + required public symbols). It does not require bit-exact reproduction of the compiled archive because the XCFramework build is not hermetic. A successful CI artifact does not establish Developer ID signing, notarization, Gatekeeper acceptance, TCC behavior, clean-account distribution, or public-release readiness.
 
-This workflow still requires the pinned model and native framework artifacts to pass `scripts/verify-model-artifacts.sh`. A successful CI artifact does not establish Developer ID signing, notarization, Gatekeeper acceptance, TCC behavior, clean-account distribution, or public-release readiness.
 
 ## Workstation prerequisites
 
@@ -105,22 +105,33 @@ test -f Binaries/CWhisper.xcframework/macos-arm64/Headers/whisper.h
 test "$(tr -d '[:space:]' < Binaries/CWhisper.xcframework/WHISPER_CPP_COMMIT)" \
   = f0499fff95a089aa9969deb009cdd4892b3e74916
 ```
+The build script clones only the pinned commit, compiles a static arm64 library with Metal enabled and macOS 26.1 as the deployment target, then records provenance in `Binaries/CWhisper.xcframework/WHISPER_CPP_COMMIT`. For internal unsigned builds the verifier (`--internal`) only checks commit + structure/symbols. A future signed release path will additionally require byte-exact archive/header/info matches plus independent review.
 
-The build script clones only the pinned commit, compiles a static arm64 library with Metal enabled and macOS 26.1 as the deployment target, then records provenance in `Binaries/CWhisper.xcframework/WHISPER_CPP_COMMIT`. Release approval additionally requires an independent pinned-source rebuild and byte/provenance/license comparison; a successful local script run alone is insufficient.
 
 ### Artifact gate
 
-The verifier records the exact model and CWhisper framework bytes used by this
-checkout. Run it before any internal or public DMG build, and do not bypass a
-failure:
+Run the verifier before building internal or release artifacts:
 
 ```bash
+# Internal unsigned builds (current mode - no Apple account):
+./scripts/verify-model-artifacts.sh --internal
+
+# Future signed release path (when credentials exist):
 ./scripts/verify-model-artifacts.sh
 ```
 
-The gate must pass before release work proceeds. A passing local gate still
-does not establish independent provenance review, signing, notarization,
-Gatekeeper acceptance, or public-release readiness.
+Internal mode verifies:
+- Exact pinned model size and SHA-256
+- whisper.cpp commit provenance (WHISPER_CPP_COMMIT file)
+- XCFramework structure, arm64 architecture, and required public symbols
+
+It does **not** require exact byte identity of the compiled archive/header/Info.plist.
+The strict (no-flag) mode additionally checks those byte hashes and is intended only
+for the signed release path.
+
+A passing local gate still does not establish independent provenance review,
+signing, notarization, Gatekeeper acceptance, or public-release readiness.
+
 
 ## Package and application builds
 
@@ -221,8 +232,8 @@ Deleting the container without in-app meeting deletion can leave Keychain items 
 ## Release blockers
 
 Public release remains blocked until evidence exists for all of the following:
+- for a real signed release: the strict (no --internal) mode of `scripts/verify-model-artifacts.sh` (model + whisper.cpp commit + archive/header/info byte checks) must pass, plus independent provenance/license review of the recorded sources;
 
-- the pinned model and CWhisper archive/header/metadata checks pass `scripts/verify-model-artifacts.sh`, and independent provenance/license review confirms those recorded sources;
 - the package test suite and Debug app build pass under the pinned Xcode toolchain; Release archive/export remains blocked on user-owned signing and notarization credentials;
 - worst-supported-device benchmarks for every claimed 8 GB and 16 GB tier under active Zoom, Google Meet, and Teams workloads, including EN/VI/code-switch quality, live latency, memory, swap, and thermal behavior;
 - real platform trials for capture boundaries, source/topology loss, mic-only mode, lock/sleep/wake, TCC grant/relaunch/denial/revocation, interruption, deletion, and offline operation;
