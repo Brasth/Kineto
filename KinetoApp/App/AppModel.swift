@@ -702,6 +702,13 @@ final class AppModel {
                 retainsAudio: false,
                 activeSources: activeSources
             )
+
+            // CRITICAL: Create the encrypted package + key BEFORE capture or any ASR append.
+            // This provisions the initial AES-GCM generation and allows later append/snapshot.
+            try await meetingStore.create(meeting)
+            try await meetingStore.updateState(.recording, for: meeting.id)
+            createdMeeting = meeting
+
             let captureEvents = try await capture.start(
                 target: selectedTarget,
                 includeMicrophone: activeSources.contains(.you)
@@ -906,6 +913,49 @@ final class AppModel {
         await translationService.cancel()
         translationTasks.removeAll(keepingCapacity: false)
     }
+    private func scheduleTranslation(for segment: Segment) {
+        guard translationEnabled else { return }
+        guard let target = segment.language.translationTarget else { return }
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                let translation = try await self.translationService.translate(segment, to: target)
+                guard !Task.isCancelled else { return }
+                if !self.translations.contains(where: {
+                    $0.sourceSegmentID == translation.sourceSegmentID &&
+                    $0.targetLanguage == translation.targetLanguage
+                }) {
+                    self.translations.append(translation)
+                }
+                try await self.meetingStore.append(translation, meetingID: segment.meetingID)
+            } catch {
+                guard !Task.isCancelled else { return }
+                self.errorMessage = "A translation was deferred; the original transcript is safe."
+            }
+            self.translationTasks[segment.id] = nil
+        }
+        translationTasks[segment.id] = task
+    }
+
+    private func ensureTranslationsForSource(_ source: AudioSource) async {
+        guard translationEnabled else { return }
+        guard let active = activeMeeting?.activeSources, active.contains(source.active) else { return }
+        // Use in-memory finalized segments for this source during live.
+        // This catches the case where a final was (or will shortly be) emitted around a gap.
+        let alreadyTranslated = Set(
+            translations.map { "\($0.sourceSegmentID.uuidString):\($0.targetLanguage.rawValue)" }
+        )
+        let candidates = segments.filter { seg in
+            guard seg.source == source, seg.isFinal else { return false }
+            guard let target = seg.language.translationTarget else { return false }
+            let key = "\(seg.id.uuidString):\(target.rawValue)"
+            return !alreadyTranslated.contains(key)
+        }
+        for seg in candidates {
+            // scheduleTranslation dedupes on the task map and inside the task body.
+            scheduleTranslation(for: seg)
+        }
+    }
 
     private func reconcileMissingTranslations(for meetingID: UUID) async {
         guard translationEnabled else { return }
@@ -932,21 +982,28 @@ final class AppModel {
         }
 
         guard !pending.isEmpty else { return }
-        var completed = 0
-        for (segment, target) in pending {
-            completed += 1
-            processingStatus = "Translating \(completed) of \(pending.count) remaining segments…"
-            do {
-                let translation = try await translationService.translate(segment, to: target)
-                try await meetingStore.append(translation, meetingID: meetingID)
-                if !translations.contains(where: {
-                    $0.sourceSegmentID == translation.sourceSegmentID &&
-                    $0.targetLanguage == translation.targetLanguage
-                }) {
-                    translations.append(translation)
+        processingStatus = "Translating \(pending.count) remaining segments…"
+        await withTaskGroup(of: Void.self) { group in
+            for (segment, target) in pending {
+                group.addTask { [weak self] in
+                    guard let self else { return }
+                    do {
+                        let translation = try await self.translationService.translate(segment, to: target)
+                        try await self.meetingStore.append(translation, meetingID: meetingID)
+                        await MainActor.run {
+                            if !self.translations.contains(where: {
+                                $0.sourceSegmentID == translation.sourceSegmentID &&
+                                $0.targetLanguage == translation.targetLanguage
+                            }) {
+                                self.translations.append(translation)
+                            }
+                        }
+                    } catch {
+                        await MainActor.run {
+                            self.errorMessage = "Some translations remain incomplete; the original transcript is safe."
+                        }
+                    }
                 }
-            } catch {
-                errorMessage = "Some translations remain incomplete; the original transcript is safe."
             }
         }
     }
@@ -1115,27 +1172,7 @@ final class AppModel {
             if let createdAt = activeMeeting?.createdAt {
                 lastTranscriptLagSeconds = max(0, Date().timeIntervalSince(createdAt) - segment.endTime)
             }
-            guard translationEnabled else { return }
-            guard let target = segment.language.translationTarget else { return }
-            let task = Task { @MainActor [weak self] in
-                guard let self else { return }
-                do {
-                    let translation = try await self.translationService.translate(segment, to: target)
-                    guard !Task.isCancelled else { return }
-                    if !self.translations.contains(where: {
-                        $0.sourceSegmentID == translation.sourceSegmentID &&
-                        $0.targetLanguage == translation.targetLanguage
-                    }) {
-                        self.translations.append(translation)
-                    }
-                    try await self.meetingStore.append(translation, meetingID: segment.meetingID)
-                } catch {
-                    guard !Task.isCancelled else { return }
-                    self.errorMessage = "A translation was deferred; the original transcript is safe."
-                }
-                self.translationTasks[segment.id] = nil
-            }
-            translationTasks[segment.id] = task
+            scheduleTranslation(for: segment)
         case let .volatile(volatile):
             if volatile.text.isEmpty {
                 volatileTranscripts[volatile.id] = nil
@@ -1146,8 +1183,14 @@ final class AppModel {
             lastRecognitionTiming = timing
         case let .gap(gap):
             gaps.append(gap)
+            // A gap closes the preceding live region for the source.
+            // Ensure any finalized segments (including ones just promoted or emitted around the gap)
+            // get their translation scheduled even if the event order had the final slightly after the gap.
+            await ensureTranslationsForSource(gap.source)
         case .failed:
-            errorMessage = "A transcript interval failed; a visible gap was recorded."
+            // Only reached when *both* the final segment *and* the compensating TranscriptGap
+            // failed to append to the encrypted package. The interval has no ledger entry.
+            errorMessage = "Failed to persist a transcript segment due to storage error. The interval is not recorded in this meeting."
         }
     }
 

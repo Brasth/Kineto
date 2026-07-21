@@ -435,18 +435,10 @@ public actor MeetingCapture {
     }
 
     private func flushPendingOutputBeforeFinish() async {
-        while !pendingOutputGaps.isEmpty, continuation != nil {
-            var madeProgress = false
-            for source in Array(pendingOutputGaps.keys) {
-                let count = pendingOutputGaps.count
-                flushPendingOutputGap(for: source)
-                madeProgress = madeProgress || pendingOutputGaps.count < count
-            }
-            if pendingOutputGaps.isEmpty { return }
-            if !madeProgress {
-                await Task.yield()
-            }
+        for source in Array(pendingOutputGaps.keys) {
+            flushPendingOutputGap(for: source)
         }
+        pendingOutputGaps.removeAll(keepingCapacity: true)
     }
 
     private func drainNormalization() async {
