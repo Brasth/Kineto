@@ -168,9 +168,9 @@ final class FloatingCaptionPetVisualPreferencesTests: XCTestCase {
     }
 
     func testPetSizesAndMotionRespectAccessibility() {
-        XCTAssertEqual(FloatingCaptionPetSize.compact.points, 40)
-        XCTAssertEqual(FloatingCaptionPetSize.standard.points, 52)
-        XCTAssertEqual(FloatingCaptionPetSize.large.points, 64)
+        XCTAssertEqual(FloatingCaptionPetSize.compact.points, 48)
+        XCTAssertEqual(FloatingCaptionPetSize.standard.points, 60)
+        XCTAssertEqual(FloatingCaptionPetSize.large.points, 72)
         XCTAssertEqual(FloatingCaptionPetMotion.subtle.effective(reduceMotion: false), .subtle)
         XCTAssertEqual(FloatingCaptionPetMotion.subtle.effective(reduceMotion: true), .static)
         XCTAssertEqual(FloatingCaptionPetMotion.static.effective(reduceMotion: false), .static)

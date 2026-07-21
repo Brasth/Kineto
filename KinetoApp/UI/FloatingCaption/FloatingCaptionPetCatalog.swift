@@ -48,7 +48,7 @@ enum FloatingCaptionPetCatalog {
             defaultAccent: accent("#00C7BE"),
             sprite: sprite([
                 "..OO....OO..",
-                ".OFF....FFO.",
+                ".OOO....OOO.",
                 ".OFF....FFO.",
                 "..OOOOOOOO..",
                 ".OFFFFFFFFO.",
@@ -67,16 +67,16 @@ enum FloatingCaptionPetCatalog {
             appearance: .orbit,
             defaultAccent: accent("#FF9F43"),
             sprite: sprite([
-                "..OO....OO..",
-                ".OFFO..OFFO.",
+                "...OO..OO...",
+                "..OOO..OOO..",
+                ".OFFFFFFFFO.",
                 ".OFFFFFFFFO.",
                 "..OOOOOOOO..",
-                ".OFFFFFFFFO.",
                 "OFFFE..EFFFO",
                 "OFFFA..AFFFO",
                 ".OFFFFFFFFO.",
-                "..OFFFFFFO..",
-                "...O....O...",
+                ".OOFFFFFFOO.",
+                "..O......O..",
                 "...OO..OO...",
                 "............"
             ])
@@ -87,15 +87,15 @@ enum FloatingCaptionPetCatalog {
             appearance: .beacon,
             defaultAccent: accent("#56D364"),
             sprite: sprite([
-                ".OO....OO...",
-                ".OFF..FFO...",
+                ".OO......OO.",
+                ".OFFFFFFFFO.",
+                ".OFFFFFFFFO.",
                 "..OOOOOOOO..",
                 ".OFFFFFFFFO.",
                 "OFFFE..EFFFO",
                 "OFFFA..AFFFO",
                 ".OFFFFFFFFO.",
                 ".OFFFFFFFFO.",
-                "..OFFFFFFO..",
                 "..OO....OO..",
                 "...O....O...",
                 "............"
@@ -108,16 +108,16 @@ enum FloatingCaptionPetCatalog {
             defaultAccent: accent("#A78BFA"),
             sprite: sprite([
                 "...OO..OO...",
-                "..OFF..FFO..",
+                "..OFFFFFOO..",
                 ".OFFFFFFFFO.",
-                "..OOOOOOOO..",
                 ".OFFFFHHFFO.",
+                "..OOOOOOOO..",
                 "OFFFE..EFFFO",
                 "OFFFB..BFFFO",
                 ".OFFFFFFFFO.",
-                "..OFFFFFFO..",
+                ".OOFFFFFFOO.",
+                "..O......O..",
                 "...OO..OO...",
-                "....O..O....",
                 "............"
             ])
         ),
@@ -128,16 +128,16 @@ enum FloatingCaptionPetCatalog {
             defaultAccent: accent("#F4B942"),
             sprite: sprite([
                 "....OO......",
-                "...OFFO.....",
+                "...OOOO.....",
                 "..OFFFFO....",
                 ".OFFFFFFFFO.",
-                "..OOOOOOOO..",
                 ".OFFFFFFFFO.",
+                "..OOOOOOOO..",
                 "OFFFE..EFFFO",
                 "OFFFA..AFFFO",
                 ".OFFFFFFFFO.",
-                "..OFFFFFFO..",
-                "...OO..OO...",
+                ".OOFFFFFFOO.",
+                "..O......O..",
                 "............"
             ])
         )

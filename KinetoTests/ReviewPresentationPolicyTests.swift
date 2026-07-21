@@ -55,3 +55,24 @@ final class ReviewPresentationPolicyTests: XCTestCase {
         }
     }
 }
+
+extension ReviewPresentationPolicyTests {
+    @MainActor
+    func testSidebarNavigationRemainsAvailableOnContentScreensAtCompactWidths() {
+        let reachable: [AppModel.Screen] = [.home, .summary, .privacy, .settings]
+        let blocked: [AppModel.Screen] = [.preflight, .live, .processing]
+
+        for screen in reachable {
+            XCTAssertTrue(
+                ReviewPresentationPolicy.allowsSidebarNavigation(for: screen),
+                "Sidebar navigation should remain available for \(screen)."
+            )
+        }
+        for screen in blocked {
+            XCTAssertFalse(
+                ReviewPresentationPolicy.allowsSidebarNavigation(for: screen),
+                "Sidebar navigation must remain hidden during \(screen)."
+            )
+        }
+    }
+}

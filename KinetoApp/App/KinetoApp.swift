@@ -13,6 +13,8 @@ struct KinetoApp: App {
     var body: some Scene {
         WindowGroup(id: Self.mainWindowID) {
             HomeView(model: model)
+                .tint(Color(cgColor: model.petAccent.cgColor))
+                .environment(\.kinetoTheme, model.petAppearance)
                 .frame(minWidth: 360, minHeight: 560)
                 .modifier(FloatingCaptionPanelConnectionModifier(
                     model: model,
@@ -21,11 +23,6 @@ struct KinetoApp: App {
                 ))
         }
         .windowStyle(.hiddenTitleBar)
-        .defaultSize(width: 1120, height: 760)
-
-        Settings {
-            CompanionSettingsView(model: model)
-        }
 
         MenuBarExtra(
             isInserted: Binding(

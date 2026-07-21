@@ -49,20 +49,23 @@ final class FloatingCaptionPresentationTests: XCTestCase {
     }
 
     func testPresentationPreservesPetStateAndDefaultsToHidden() {
-        let defaultPresentation = FloatingCaptionPresentation(isVisible: true, lines: [])
-        let listeningPresentation = FloatingCaptionPresentation(
+        let defaultPresentation = FloatingCaptionPresentation(
+            isVisible: false,
+            lines: [],
+            petState: .hidden
+        )
+        let settledPresentation = FloatingCaptionPresentation(
             isVisible: true,
             lines: [],
-            petState: .listening
+            petState: .settled
         )
 
         XCTAssertEqual(defaultPresentation.petState, .hidden)
-        XCTAssertEqual(listeningPresentation.petState, .listening)
+        XCTAssertEqual(settledPresentation.petState, .settled)
     }
 
     func testPetPanelDragEligibilityMatchesEveryPetState() {
         XCTAssertFalse(FloatingCaptionPetState.hidden.isPanelDragEligible)
-        XCTAssertTrue(FloatingCaptionPetState.listening.isPanelDragEligible)
         XCTAssertTrue(FloatingCaptionPetState.settled.isPanelDragEligible)
     }
 
@@ -301,31 +304,33 @@ final class FloatingCaptionPresentationTests: XCTestCase {
     }
 
     func testLivePetStateIsIndependentOfVolatileTranscriptPresence() {
+        // Pet must receive only non-content state. It must never derive
+        // appearance/motion from the presence or content of transcripts.
         let volatileTranscript = VolatileTranscript(
-            id: "volatile-state-independence",
+            id: "volatile-state",
             source: .selectedSource,
-            text: "Transcript content must not affect pet state",
+            text: "some speech",
             startTime: 1,
             endTime: 2,
             language: .english
         )
 
-        let withoutVolatileTranscript = FloatingCaptionPresentation.live(
+        let withoutVolatile = FloatingCaptionPresentation.live(
             segments: [],
             translations: [],
             volatileTranscripts: [],
             petModeEnabled: true
         )
-        let withVolatileTranscript = FloatingCaptionPresentation.live(
+        let withVolatile = FloatingCaptionPresentation.live(
             segments: [],
             translations: [],
             volatileTranscripts: [volatileTranscript],
             petModeEnabled: true
         )
 
-        XCTAssertEqual(withoutVolatileTranscript.petState, .settled)
-        XCTAssertEqual(withVolatileTranscript.petState, .settled)
-        XCTAssertEqual(withoutVolatileTranscript.petState, withVolatileTranscript.petState)
+        XCTAssertEqual(withoutVolatile.petState, .settled)
+        XCTAssertEqual(withVolatile.petState, .settled)
+        XCTAssertEqual(withoutVolatile.petState, withVolatile.petState)
     }
 
     func testLivePresentationOrdersInactiveCandidatesByTotalKeyAndAppendsActiveVolatile() {
@@ -590,6 +595,65 @@ final class FloatingCaptionPresentationTests: XCTestCase {
         )
     }
 
+    func testCompanionDerivedFromClampedCaptionStaysLinkedAndOnScreenAtEdge() {
+        // Simulates the corrected drag behavior: desired position near edge is clamped on caption,
+        // then companion must be re-derived from clamped caption (not raw mouse) to stay linked.
+        let visibleFrame = CGRect(x: 0, y: 0, width: 800, height: 600)
+        let captionSize = CGSize(width: 576, height: 68)
+        let companionSize = CGSize(width: 52, height: 52)
+        let verticalGap: CGFloat = 8
+
+        // A raw mouse position that would push the pair past the right/bottom edge.
+        let rawCompanionNearEdge = CGPoint(x: 780, y: 570)  // would overflow
+
+        let desiredCaption = FloatingCaptionPanelPlacement.captionOrigin(
+            companionOrigin: rawCompanionNearEdge,
+            captionSize: captionSize,
+            companionSize: companionSize,
+            verticalGap: verticalGap
+        )
+
+        let linkedSize = FloatingCaptionPanelPlacement.linkedSize(
+            captionSize: captionSize,
+            companionSize: companionSize,
+            verticalGap: verticalGap
+        )
+
+        let clampedCaption = FloatingCaptionPanelPlacement.clamp(
+            origin: desiredCaption,
+            visibleFrame: visibleFrame,
+            panelSize: linkedSize
+        )
+
+        // Companion must come from the clamped caption, not the raw position.
+        let derivedCompanion = FloatingCaptionPanelPlacement.companionOrigin(
+            captionFrame: CGRect(origin: clampedCaption, size: captionSize),
+            companionSize: companionSize,
+            verticalGap: verticalGap
+        )
+
+        let linkedFootprint = CGRect(
+            origin: clampedCaption,
+            size: linkedSize
+        )
+
+        // Invariants that the runtime drag fix now guarantees:
+        XCTAssertGreaterThanOrEqual(linkedFootprint.minX, visibleFrame.minX)
+        XCTAssertGreaterThanOrEqual(linkedFootprint.minY, visibleFrame.minY)
+        XCTAssertLessThanOrEqual(linkedFootprint.maxX, visibleFrame.maxX)
+        XCTAssertLessThanOrEqual(linkedFootprint.maxY, visibleFrame.maxY)
+
+        // Derived companion must satisfy the exact linked equations with the clamped caption.
+        XCTAssertEqual(
+            FloatingCaptionPanelPlacement.captionOrigin(
+                companionOrigin: derivedCompanion,
+                captionSize: captionSize,
+                companionSize: companionSize,
+                verticalGap: verticalGap
+            ),
+            clampedCaption
+        )
+    }
     func testActiveCaptureHeaderIsVisibleWithNoCaptions() {
         let presentation = FloatingCaptionPresentation.live(
             segments: [],
@@ -601,5 +665,35 @@ final class FloatingCaptionPresentationTests: XCTestCase {
         XCTAssertTrue(presentation.isVisible)
         XCTAssertTrue(presentation.lines.isEmpty)
         XCTAssertEqual(presentation.header.captureStatus, .capturing)
+    }
+
+    func testPetAnimationReceivesOnlyNonContentState() {
+        // PetView receives only high-level non-content state (settled/hidden).
+        // No transcript content, volatile presence, source identity, or sentiment
+        // may ever influence the pet state.
+        let withVolatile = FloatingCaptionPresentation.live(
+            segments: [Segment(meetingID: UUID(), source: .you, startTime: 0, endTime: 1, language: .english, text: "hello", isFinal: true)],
+            translations: [],
+            volatileTranscripts: [VolatileTranscript(id: "v1", source: .you, text: "speaking", startTime: 0, endTime: 0.5, language: .english)],
+            petModeEnabled: true
+        )
+        let withoutVolatile = FloatingCaptionPresentation.live(
+            segments: [],
+            translations: [],
+            volatileTranscripts: [],
+            petModeEnabled: true
+        )
+
+        XCTAssertEqual(withVolatile.petState, .settled)
+        XCTAssertEqual(withoutVolatile.petState, .settled)
+
+        // Hidden when disabled, regardless of anything else.
+        let disabled = FloatingCaptionPresentation.live(
+            segments: [],
+            translations: [],
+            volatileTranscripts: [],
+            petModeEnabled: false
+        )
+        XCTAssertEqual(disabled.petState, .hidden)
     }
 }

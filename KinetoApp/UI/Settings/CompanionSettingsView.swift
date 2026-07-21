@@ -16,53 +16,58 @@ struct CompanionSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                if model.petModeEnabled {
-                    Picker(
-                        "Pet theme",
-                        selection: Binding<FloatingCaptionPetAppearance>(
-                            get: { model.petAppearance },
-                            set: { appearance in
-                                guard let theme = FloatingCaptionPetCatalog.builtInThemes.first(
-                                    where: { $0.appearance == appearance }
-                                ) else {
-                                    return
-                                }
-                                model.selectPetTheme(theme)
-                            }
-                        )
-                    ) {
-                        ForEach(FloatingCaptionPetCatalog.builtInThemes) { theme in
-                            Text(theme.title).tag(theme.appearance)
+                Text("Theme chooses accent used for the main window and (in future) floating captions. The companion is optional and decorative.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.bottom, 4)
+                Picker(
+                    "Theme",
+                    selection: Binding(
+                        get: { model.petAppearance },
+                        set: { appearance in
+                            guard let theme = FloatingCaptionPetCatalog.builtInThemes.first(
+                                where: { $0.appearance == appearance }
+                            ) else { return }
+                            model.selectPetTheme(theme)
                         }
+                    )
+                ) {
+                    ForEach(FloatingCaptionPetCatalog.builtInThemes) { theme in
+                        Text(theme.title).tag(theme.appearance)
                     }
-                    Picker("Size", selection: $model.petSize) {
+                }
+
+                // Selectable theme swatches (tappable, independent of companion toggle)
+                HStack(spacing: 12) {
+                    ForEach(FloatingCaptionPetCatalog.builtInThemes) { t in
+                        Button {
+                            model.selectPetTheme(t)
+                        } label: {
+                            Circle()
+                                .fill(Color(cgColor: t.defaultAccent.cgColor))
+                                .frame(width: 20, height: 20)
+                                .overlay(
+                                    Circle()
+                                        .stroke(model.petAppearance == t.appearance ? Color.primary : Color.clear, lineWidth: 2)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(t.title)
+                    }
+                }
+                .padding(.bottom, 4)
+
+                if model.petModeEnabled {
+                    Picker("Companion size", selection: $model.petSize) {
                         ForEach(FloatingCaptionPetSize.allCases, id: \.self) { size in
                             Text(size.title).tag(size)
                         }
                     }
-                    Picker("Motion", selection: $model.petMotion) {
+                    Picker("Companion motion", selection: $model.petMotion) {
                         ForEach(FloatingCaptionPetMotion.allCases, id: \.self) { motion in
                             Text(motion.title).tag(motion)
                         }
                     }
-                    ColorPicker(
-                        "Leaf accent",
-                        selection: Binding<Color>(
-                            get: { Color(cgColor: model.petAccent.cgColor) },
-                            set: { color in
-                                guard let cgColor = color.cgColor,
-                                      let accent = FloatingCaptionPetAccent(cgColor: cgColor)
-                                else {
-                                    return
-                                }
-                                model.petAccent = accent
-                            }
-                        ),
-                        supportsOpacity: false
-                    )
-                    Text("Accent color affects companion pixels only.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
             }
             Section("Transcription") {
@@ -133,8 +138,9 @@ struct CompanionSettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 390)
-        .padding(20)
+        .frame(maxWidth: 420, alignment: .topLeading)
+        .padding(.vertical, 16)
+        .padding(.horizontal, 12)
         .fileImporter(
             isPresented: $importsModel,
             allowedContentTypes: [.data],

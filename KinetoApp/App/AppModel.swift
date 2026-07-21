@@ -41,6 +41,7 @@ final class AppModel {
         case processing
         case summary
         case privacy
+        case settings
     }
     private static let petSettingsKey = "kineto.petSettings"
     private var isRestoringPetSettings = false
@@ -557,7 +558,8 @@ final class AppModel {
                 petModeEnabled: petModeEnabled
             ),
             petVisualPreferences: floatingCaptionPetVisualPreferences,
-            signalGatePresentation: gatePresentation
+            signalGatePresentation: gatePresentation,
+            theme: petAppearance
         )
     }
 

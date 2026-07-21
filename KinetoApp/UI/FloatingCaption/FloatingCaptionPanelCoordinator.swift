@@ -225,38 +225,45 @@ final class FloatingCaptionPanelCoordinator {
 
         let currentMouse = NSEvent.mouseLocation
 
-        // Always keep the visual center of the pet sprite directly under the mouse.
-        // This is the most intuitive "grab the pet" behavior.
+        // Compute desired companion centered under mouse, then derive the linked caption position.
         let half = companionSize.width / 2
-        let companionOrigin = CGPoint(
+        let desiredCompanionOrigin = CGPoint(
             x: currentMouse.x - half,
             y: currentMouse.y - half
         )
 
-        // Derive the caption panel position that maintains the linked layout (pet above caption).
+        // Derive caption that would keep the pet perfectly above the caption.
         let desiredCaption = FloatingCaptionPanelPlacement.captionOrigin(
-            companionOrigin: companionOrigin,
+            companionOrigin: desiredCompanionOrigin,
             captionSize: panel.frame.size,
             companionSize: companionSize,
             verticalGap: Self.companionGap
         )
 
-        // Move the main caption panel.
+        // Clamp the full linked footprint to the visible screen.
         let linkedSize = FloatingCaptionPanelPlacement.linkedSize(
             captionSize: panel.frame.size,
             companionSize: companionSize,
             verticalGap: Self.companionGap
         )
         let screen = displayScreen() ?? NSScreen.main!
-        let clamped = FloatingCaptionPanelPlacement.clamp(
+        let clampedCaption = FloatingCaptionPanelPlacement.clamp(
             origin: desiredCaption,
             visibleFrame: screen.visibleFrame,
             panelSize: linkedSize
         )
-        panel.setFrameOrigin(clamped)
+        panel.setFrameOrigin(clampedCaption)
 
-        // Directly set the companion. We are the source of truth while dragging the pet.
-        companionPanel.setFrameOrigin(companionOrigin)
+        // Always place the companion relative to the *clamped* caption frame.
+        // This guarantees the documented linked-pair contract.
+        // The pointer may drift from exact center of pet when the pair is pressed against a screen edge.
+        companionPanel.setFrameOrigin(
+            FloatingCaptionPanelPlacement.companionOrigin(
+                captionFrame: panel.frame,
+                companionSize: companionSize,
+                verticalGap: Self.companionGap
+            )
+        )
     }
 
     private func endPanelDrag(_ source: FloatingCaptionDragSource) {

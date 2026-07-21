@@ -1,7 +1,7 @@
 import CoreGraphics
 import SwiftUI
 
-enum FloatingCaptionPetAppearance: String, CaseIterable, Sendable {
+enum FloatingCaptionPetAppearance: String, CaseIterable, Codable, Sendable {
     case signal = "signal"
     case orbit = "orbit"
     case beacon = "beacon"
@@ -19,7 +19,7 @@ enum FloatingCaptionPetAppearance: String, CaseIterable, Sendable {
     }
 }
 
-enum FloatingCaptionPetSize: String, CaseIterable, Sendable {
+enum FloatingCaptionPetSize: String, CaseIterable, Codable, Sendable {
     case compact
     case standard
     case large
@@ -34,14 +34,14 @@ enum FloatingCaptionPetSize: String, CaseIterable, Sendable {
 
     var points: CGFloat {
         switch self {
-        case .compact: 40
-        case .standard: 52
-        case .large: 64
+        case .compact: 48
+        case .standard: 60
+        case .large: 72
         }
     }
 }
 
-enum FloatingCaptionPetMotion: String, CaseIterable, Sendable {
+enum FloatingCaptionPetMotion: String, CaseIterable, Codable, Sendable {
     case subtle
     case `static`
 
@@ -57,7 +57,7 @@ enum FloatingCaptionPetMotion: String, CaseIterable, Sendable {
     }
 }
 
-struct FloatingCaptionPetAccent: Equatable, Sendable {
+struct FloatingCaptionPetAccent: Codable, Equatable, Sendable {
     static let defaultStorageValue = "#00C7BE"
 
     private let red: UInt8
@@ -192,30 +192,46 @@ struct FloatingCaptionOverlayPresentation: Equatable, Sendable {
     let caption: FloatingCaptionPresentation
     let petVisualPreferences: FloatingCaptionPetVisualPreferences
     let signalGatePresentation: SignalGatePresentation
+    let theme: FloatingCaptionPetAppearance
 
     init(
         caption: FloatingCaptionPresentation,
         petVisualPreferences: FloatingCaptionPetVisualPreferences,
-        signalGatePresentation: SignalGatePresentation
+        signalGatePresentation: SignalGatePresentation,
+        theme: FloatingCaptionPetAppearance = .signal
     ) {
         self.caption = caption
         self.petVisualPreferences = petVisualPreferences
         self.signalGatePresentation = caption.isVisible && signalGatePresentation.phase == .capturing
             ? signalGatePresentation
             : SignalGatePresentation(phase: .hidden)
+        self.theme = theme
     }
-
     var isVisible: Bool { caption.isVisible }
-
     static let hidden = Self(
         caption: .hidden,
         petVisualPreferences: .default,
-        signalGatePresentation: SignalGatePresentation(phase: .hidden)
+        signalGatePresentation: SignalGatePresentation(phase: .hidden),
+        theme: .signal
     )
 }
 
 private extension Comparable {
     func clamped(to range: ClosedRange<Self>) -> Self {
         min(max(self, range.lowerBound), range.upperBound)
+    }
+}
+
+// Environment key for the current Kineto experience theme.
+// Views can read @Environment(\.kinetoTheme) to adapt styling when deeper
+// UI differences (materials, rails, densities) are implemented.
+struct KinetoThemeKey: EnvironmentKey {
+    static let defaultValue: FloatingCaptionPetAppearance = .signal
+}
+
+extension EnvironmentValues {
+    var kinetoTheme: FloatingCaptionPetAppearance {
+        get { self[KinetoThemeKey.self] }
+        set { self[KinetoThemeKey.self] = newValue }
     }
 }
