@@ -2,6 +2,7 @@ import KinetoCore
 @preconcurrency import Translation
 import SwiftUI
 import UniformTypeIdentifiers
+import AppKit
 
 enum ReviewPresentationPolicy {
     enum Workspace: Hashable {
@@ -84,6 +85,17 @@ struct HomeView: View {
                     Label(model.modelStatus, systemImage: model.modelReady ? "checkmark.seal" : "arrow.down.circle")
                         .font(.caption)
                         .foregroundStyle(model.modelReady ? Color.secondary : Color.orange)
+                }
+                Section {
+                    HStack {
+                        Label("Settings", systemImage: "gear")
+                        Spacer()
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        NSApp.activate(ignoringOtherApps: true)
+                        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                    }
                 }
             }
             .navigationSplitViewColumnWidth(
@@ -300,63 +312,6 @@ struct HomeView: View {
                     }
                     .padding(8)
                 }
-                GroupBox("Live speech engine") {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Picker("Engine", selection: $model.asrEnginePreference) {
-                            ForEach(ASREnginePreference.allCases) { engine in
-                                Text(engine.displayName).tag(engine)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        Text(model.asrEnginePreference.detail)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Picker("Spoken language", selection: $model.recognitionLanguagePreference) {
-                            ForEach(model.recognitionLanguageOptions) { language in
-                                Text(model.recognitionLanguageDisplayName(language)).tag(language)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        Text(model.recognitionLanguageExplanation)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        if let state = model.recognitionLanguageAssetState(
-                            model.recognitionLanguagePreference
-                        ) {
-                            Label(
-                                "\(model.recognitionLanguageDisplayName(model.recognitionLanguagePreference)) · \(state.label)",
-                                systemImage: "character.book.closed"
-                            )
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                        }
-                        if model.asrEnginePreference == .appleSpeech,
-                           model.appleSpeechStatus.canDownloadAsset(for: model.recognitionLanguagePreference) {
-                            Button("Download selected Apple speech language…") {
-                                Task { await model.installAppleSpeechAssets() }
-                            }
-                            .disabled(model.isBusy)
-                        }
-                        if model.asrEnginePreference == .appleSpeech,
-                           !model.canUseAppleSpeechForRecognitionLanguage {
-                            Button("Use Whisper instead") {
-                                model.asrEnginePreference = .whisper
-                            }
-                        }
-                        if model.asrEnginePreference == .whisper || !model.canUseAppleSpeechForRecognitionLanguage {
-                            Divider()
-                            settingRow(
-                                title: "Whisper fallback model",
-                                detail: model.modelStatus,
-                                status: model.modelReady
-                            ) {
-                                Button("Import verified model…") { importsModel = true }
-                                    .disabled(model.isBusy)
-                            }
-                        }
-                    }
-                    .padding(8)
-                }
                 GroupBox("Local processing") {
                     VStack(alignment: .leading, spacing: 14) {
                         Toggle("Include my microphone as “You”", isOn: $model.includeMicrophone)
@@ -376,15 +331,6 @@ struct HomeView: View {
                                 Text("Vietnamese").tag(SpokenLanguage.vietnamese)
                             }
                             .pickerStyle(.segmented)
-                            Picker("Summary format", selection: $model.summaryTemplate) {
-                                ForEach(SummaryTemplate.allCases) { template in
-                                    Text(template.displayName).tag(template)
-                                }
-                            }
-                            .pickerStyle(.menu)
-                            Text(model.summaryTemplate.detail)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
                         }
                     }
                     .padding(8)
