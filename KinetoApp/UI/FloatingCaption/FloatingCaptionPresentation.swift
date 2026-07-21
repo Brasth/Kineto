@@ -26,7 +26,6 @@ struct FloatingCaptionLine: Identifiable, Equatable, Sendable {
 
 enum FloatingCaptionPetState: Equatable, Sendable {
     case hidden
-    case listening
     case settled
 }
 
@@ -153,7 +152,6 @@ extension FloatingCaptionPresentation {
                 .prefix(maximumLineCount)
                 .sorted(by: isLessRecent)
         }
-
         let petState: FloatingCaptionPetState = petModeEnabled ? .settled : .hidden
 
         return Self(

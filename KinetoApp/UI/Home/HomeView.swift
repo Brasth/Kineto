@@ -12,11 +12,13 @@ enum ReviewPresentationPolicy {
     }
 
     static let sidebarMaximumWidth: CGFloat = 290
-    static let regularReviewPaneMinimumWidth: CGFloat = 360
-    static let reviewChromeAllowance: CGFloat = 72
+    static let regularReviewPaneMinimumWidth: CGFloat = 420
+    static let transcriptPaneMinimumWidth: CGFloat = 440
+    static let reviewChromeAllowance: CGFloat = 80
     static let compactPresentationThreshold: CGFloat =
         sidebarMaximumWidth
-        + (regularReviewPaneMinimumWidth * 2)
+        + regularReviewPaneMinimumWidth
+        + transcriptPaneMinimumWidth
         + reviewChromeAllowance
 
     static func isCompact(outerWidth: CGFloat) -> Bool {
@@ -30,6 +32,15 @@ enum ReviewPresentationPolicy {
     static func displayedWorkspace(for selection: Workspace, isCompact: Bool) -> Workspace {
         guard !isCompact, selection == .transcript else { return selection }
         return .summary
+    }
+
+    static func allowsSidebarNavigation(for screen: AppModel.Screen) -> Bool {
+        switch screen {
+        case .home, .summary, .privacy, .settings:
+            true
+        case .preflight, .live, .processing:
+            false
+        }
     }
 }
 
@@ -49,8 +60,8 @@ struct HomeView: View {
     )
     @State private var chatQuestion = ""
     @FocusState private var chatQuestionFocused: Bool
+    @ScaledMetric(relativeTo: .body) private var chatEditorHeight = 36
     @State private var submittedChatQuestion: String?
-    @ScaledMetric(relativeTo: .body) private var chatEditorHeight = 64
     @State private var sidebarVisibility: NavigationSplitViewVisibility = .all
     @State private var usesCompactPresentation = false
     @State private var reviewWorkspace: ReviewPresentationPolicy.Workspace = .summary
@@ -87,15 +98,8 @@ struct HomeView: View {
                         .foregroundStyle(model.modelReady ? Color.secondary : Color.orange)
                 }
                 Section {
-                    HStack {
-                        Label("Settings", systemImage: "gear")
-                        Spacer()
-                    }
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        NSApp.activate(ignoringOtherApps: true)
-                        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-                    }
+                    Label("Settings", systemImage: "gear")
+                        .tag(AppModel.Screen.settings)
                 }
             }
             .navigationSplitViewColumnWidth(
@@ -118,6 +122,9 @@ struct HomeView: View {
                     summary
                 case .privacy:
                     privacy
+                case .settings:
+                    CompanionSettingsView(model: model)
+                        .navigationTitle("Settings")
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -179,6 +186,15 @@ struct HomeView: View {
             EvidenceSheet(selection: selection)
         }
         }
+        .toolbar {
+            if !canPresentSidebar {
+                // Suppress the automatic sidebar toggle icon — it would be non-functional
+                // because we deliberately force .detailOnly in narrow windows and on certain screens.
+                ToolbarItem(placement: .navigation) {
+                    EmptyView()
+                }
+            }
+        }
     }
 
     private var sidebarVisibilityBinding: Binding<NavigationSplitViewVisibility> {
@@ -201,13 +217,7 @@ struct HomeView: View {
     }
 
     private var canPresentSidebar: Bool {
-        guard !usesCompactPresentation else { return false }
-        switch model.screen {
-        case .home, .summary, .privacy:
-            return true
-        case .preflight, .live, .processing:
-            return false
-        }
+        ReviewPresentationPolicy.allowsSidebarNavigation(for: model.screen)
     }
 
     private func synchronizePresentation(for width: CGFloat, restoresSidebar: Bool) {
@@ -218,7 +228,7 @@ struct HomeView: View {
         switch model.screen {
         case .preflight, .live, .processing:
             sidebarVisibility = .detailOnly
-        case .home, .summary, .privacy:
+        case .home, .summary, .privacy, .settings:
             if isCompact {
                 sidebarVisibility = .detailOnly
             } else if restoresSidebar || wasCompact {
@@ -231,10 +241,10 @@ struct HomeView: View {
         ScrollView {
             VStack(spacing: 28) {
                 ZStack {
-                    Circle().fill(.mint.opacity(0.12)).frame(width: 112, height: 112)
+                    Circle().fill(Color(cgColor: model.petAccent.cgColor).opacity(0.12)).frame(width: 112, height: 112)
                     Image(systemName: "waveform.badge.mic")
                         .font(.system(size: 48, weight: .light))
-                        .foregroundStyle(.mint)
+                        .foregroundStyle(Color(cgColor: model.petAccent.cgColor))
                         .accessibilityHidden(true)
                 }
                 VStack(spacing: 10) {
@@ -247,7 +257,6 @@ struct HomeView: View {
                 }
                 Button("New Meeting", systemImage: "plus") { Task { await model.newMeeting() } }
                     .buttonStyle(.borderedProminent)
-                    .tint(.mint)
                     .controlSize(.large)
                     .keyboardShortcut("n", modifiers: .command)
                 HStack(spacing: 18) {
@@ -322,7 +331,7 @@ struct HomeView: View {
                                 systemImage: model.translationReady ? "checkmark.circle.fill" : "arrow.down.circle"
                             )
                             .font(.caption)
-                            .foregroundStyle(model.translationReady ? Color.mint : Color.secondary)
+                            .foregroundStyle(model.translationReady ? Color(cgColor: model.petAccent.cgColor) : Color.secondary)
                         }
                         Toggle("Generate a post-meeting summary", isOn: $model.summaryEnabled)
                         if model.summaryEnabled {
@@ -347,7 +356,6 @@ struct HomeView: View {
                         Task { await model.startMeeting() }
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(.mint)
                     .controlSize(.large)
                     .disabled(
                         model.selectedTarget == nil || !model.canStartWithCurrentASR ||
@@ -647,7 +655,7 @@ struct HomeView: View {
     }
 
     private var summary: some View {
-        SummaryViewportLayout {
+        VStack(spacing: 0) {
             summaryHeader
 
             if usesCompactPresentation {
@@ -655,8 +663,6 @@ struct HomeView: View {
             } else {
                 regularSummaryReview
             }
-
-            summaryFooter
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .navigationTitle("Summary")
@@ -665,9 +671,13 @@ struct HomeView: View {
     private var summaryHeader: some View {
         Group {
             if usesCompactPresentation {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 12) {
                     summaryTitle
-                    newMeetingButton
+                    HStack(spacing: 8) {
+                        newMeetingButton
+                        summaryDeleteButton
+                        summaryExportButton
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             } else {
@@ -675,13 +685,21 @@ struct HomeView: View {
                     HStack {
                         summaryTitle
                         Spacer()
-                        newMeetingButton
+                        HStack(spacing: 8) {
+                            newMeetingButton
+                            summaryDeleteButton
+                            summaryExportButton
+                        }
                     }
                     .fixedSize(horizontal: true, vertical: false)
 
-                    VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 12) {
                         summaryTitle
-                        newMeetingButton
+                        HStack(spacing: 8) {
+                            newMeetingButton
+                            summaryDeleteButton
+                            summaryExportButton
+                        }
                     }
                 }
             }
@@ -711,43 +729,68 @@ struct HomeView: View {
     }
 
     private var regularSummaryReview: some View {
-        HSplitView {
-            VStack(spacing: 0) {
-                Picker("Review workspace", selection: regularReviewWorkspaceBinding) {
-                    ForEach(ReviewPresentationPolicy.workspaceOptions(isCompact: false), id: \.self) {
-                        reviewWorkspaceLabel($0).tag($0)
+        Group {
+            if reviewWorkspace == .ask {
+                // Full-width Ask experience (matches compact behavior)
+                VStack(spacing: 0) {
+                    Picker("Review workspace", selection: regularReviewWorkspaceBinding) {
+                        ForEach(ReviewPresentationPolicy.workspaceOptions(isCompact: false), id: \.self) {
+                            reviewWorkspaceLabel($0).tag($0)
+                        }
                     }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .padding(12)
-                .accessibilityLabel("Meeting review workspace")
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .padding(12)
+                    .accessibilityLabel("Meeting review workspace")
 
-                Divider()
+                    Divider()
 
-                Group {
-                    switch reviewWorkspace {
-                    case .transcript, .summary:
-                        summaryWorkspace
-                    case .ask:
+                    GeometryReader { geo in
                         chatWorkspace
+                            .frame(width: geo.size.width, height: geo.size.height)
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-            .frame(
-                minWidth: ReviewPresentationPolicy.regularReviewPaneMinimumWidth,
-                idealWidth: 440,
-                maxWidth: .infinity,
-                maxHeight: .infinity
-            )
+            } else {
+                // Summary + transcript evidence side-by-side
+                HSplitView {
+                    VStack(spacing: 0) {
+                        Picker("Review workspace", selection: regularReviewWorkspaceBinding) {
+                            ForEach(ReviewPresentationPolicy.workspaceOptions(isCompact: false), id: \.self) {
+                                reviewWorkspaceLabel($0).tag($0)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .padding(12)
+                        .accessibilityLabel("Meeting review workspace")
 
-            transcriptWorkspace
-                .frame(
-                    minWidth: ReviewPresentationPolicy.regularReviewPaneMinimumWidth,
-                    maxWidth: .infinity,
-                    maxHeight: .infinity
-                )
+                        Divider()
+
+                        Group {
+                            switch reviewWorkspace {
+                            case .transcript, .summary:
+                                summaryWorkspace
+                            case .ask:
+                                chatWorkspace   // unreachable here
+                            }
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                    .frame(
+                        minWidth: ReviewPresentationPolicy.regularReviewPaneMinimumWidth,
+                        idealWidth: 460,
+                        maxWidth: .infinity,
+                        maxHeight: .infinity
+                    )
+
+                    transcriptWorkspace
+                        .frame(
+                            minWidth: ReviewPresentationPolicy.transcriptPaneMinimumWidth,
+                            maxWidth: .infinity,
+                            maxHeight: .infinity
+                        )
+                }
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -784,17 +827,19 @@ struct HomeView: View {
 
             Divider()
 
-            Group {
-                switch reviewWorkspace {
-                case .transcript:
-                    transcriptWorkspace
-                case .summary:
-                    summaryWorkspace
-                case .ask:
-                    chatWorkspace
+            GeometryReader { geo in
+                Group {
+                    switch reviewWorkspace {
+                    case .transcript:
+                        transcriptWorkspace
+                    case .summary:
+                        summaryWorkspace
+                    case .ask:
+                        chatWorkspace
+                    }
                 }
+                .frame(width: geo.size.width, height: geo.size.height)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -820,33 +865,6 @@ struct HomeView: View {
         }
     }
 
-    private var summaryFooter: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack {
-                summaryDeleteButton
-                summaryExportButton
-                Spacer()
-                summaryStatus
-            }
-
-            VStack(alignment: .leading, spacing: 10) {
-                summaryStatus
-                ViewThatFits(in: .horizontal) {
-                    HStack {
-                        summaryDeleteButton
-                        summaryExportButton
-                    }
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        summaryDeleteButton
-                        summaryExportButton
-                    }
-                }
-            }
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
 
     private var summaryDeleteButton: some View {
         Button("Delete…", role: .destructive) { confirmsDelete = true }
@@ -863,12 +881,6 @@ struct HomeView: View {
         .fixedSize()
     }
 
-    private var summaryStatus: some View {
-        Text(model.isGeneratingSummary ? "Generating summary…" : "Encrypted locally · raw audio off")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-    }
 
     private var summaryWorkspace: some View {
         List {
@@ -933,30 +945,16 @@ struct HomeView: View {
         VStack(spacing: 0) {
             Group {
                 if model.chatTurns.isEmpty {
-                    VStack(spacing: 20) {
-                        Spacer(minLength: 16)
-
-                        Image(systemName: "sparkles")
-                            .font(.system(size: 32, weight: .medium))
-                            .foregroundStyle(.mint)
-                            .accessibilityHidden(true)
-
-                        VStack(spacing: 8) {
-                            Text("Ask Kineto")
-                                .font(.title2.weight(.semibold))
-
-                            Text("Ask about this meeting using only its finalized transcript. Answers stay on this Mac and link back to evidence.")
+                    ScrollView {
+                        VStack(spacing: 6) {
+                            Text("Try a prompt")
+                                .font(.caption.weight(.semibold))
                                 .foregroundStyle(.secondary)
-                                .multilineTextAlignment(.center)
-                                .fixedSize(horizontal: false, vertical: true)
+
+                            chatQuestionSuggestions
                         }
-                        .frame(maxWidth: 440)
-
-                        chatQuestionSuggestions
-
-                        Spacer(minLength: 16)
+                        .padding(8)
                     }
-                    .padding(24)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     List {
@@ -974,16 +972,18 @@ struct HomeView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.clear)
 
             VStack(spacing: 0) {
                 Divider()
 
                 meetingChatComposer
-                    .padding(12)
+                    .padding(8)
             }
             .background(.bar)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.clear)
     }
 
     private var chatQuestionSuggestions: some View {
@@ -1154,30 +1154,58 @@ struct HomeView: View {
                 }
             }
 
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("Return adds a line · ⌘↩ sends")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("Return adds a line · ⌘↩ sends")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
 
-                Spacer(minLength: 8)
+                    Spacer(minLength: 8)
 
-                Text("\(chatQuestion.count)/\(Self.chatQuestionLimit)")
-                    .font(.caption)
-                    .monospacedDigit()
-                    .foregroundStyle(
-                        chatQuestion.count == Self.chatQuestionLimit ? .orange : .secondary
-                    )
-                    .accessibilityLabel(chatQuestionAccessibilityValue)
+                    Text("\(chatQuestion.count)/\(Self.chatQuestionLimit)")
+                        .font(.caption)
+                        .monospacedDigit()
+                        .foregroundStyle(
+                            chatQuestion.count == Self.chatQuestionLimit ? .orange : .secondary
+                        )
+                        .accessibilityLabel(chatQuestionAccessibilityValue)
 
-                Button(model.isAnsweringChat ? "Sending" : "Send", systemImage: "paperplane.fill") {
-                    submitChatQuestion()
+                    Button(model.isAnsweringChat ? "Sending" : "Send", systemImage: "paperplane.fill") {
+                        submitChatQuestion()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.mint)
+                    .disabled(chatDisabled || questionIsEmpty)
+                    .accessibilityLabel("Send question")
+                    .accessibilityHint("Searches this meeting’s finalized transcript.")
+                    .accessibilityValue(chatAvailabilityDescription)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(.mint)
-                .disabled(chatDisabled || questionIsEmpty)
-                .accessibilityLabel("Send question")
-                .accessibilityHint("Searches this meeting’s finalized transcript.")
-                .accessibilityValue(chatAvailabilityDescription)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Return adds a line · ⌘↩ sends")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    HStack(spacing: 8) {
+                        Text("\(chatQuestion.count)/\(Self.chatQuestionLimit)")
+                            .font(.caption)
+                            .monospacedDigit()
+                            .foregroundStyle(
+                                chatQuestion.count == Self.chatQuestionLimit ? .orange : .secondary
+                            )
+                            .accessibilityLabel(chatQuestionAccessibilityValue)
+
+                        Button(model.isAnsweringChat ? "Sending" : "Send", systemImage: "paperplane.fill") {
+                            submitChatQuestion()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.mint)
+                        .disabled(chatDisabled || questionIsEmpty)
+                        .accessibilityLabel("Send question")
+                        .accessibilityHint("Searches this meeting’s finalized transcript.")
+                        .accessibilityValue(chatAvailabilityDescription)
+                    }
+                }
             }
 
             if chatQuestion.count == Self.chatQuestionLimit {
@@ -1372,6 +1400,8 @@ private struct TranscriptRow: View {
                 .font(.body)
                 .foregroundStyle(.primary)
                 .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .lineLimit(nil)
             if let translation {
                 Text(translation.text)
                     .font(.callout)
@@ -1384,6 +1414,8 @@ private struct TranscriptRow: View {
                     }
                     .accessibilityLabel("Translation: \(translation.text)")
                     .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(nil)
             }
         }
         .padding(.vertical, 4)

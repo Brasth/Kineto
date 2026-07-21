@@ -62,8 +62,15 @@ final class FloatingCaptionCompanionPanel {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         panel.hidesOnDeactivate = false
         panel.ignoresMouseEvents = false
+        // Crisp pixel art support: nearest-neighbor filtering + disable edge anti-aliasing.
+        // This helps the Canvas-drawn 12x12 sprites stay sharp inside the transparent NSPanel.
+        hostingView.wantsLayer = true
+        if let layer = hostingView.layer {
+            layer.magnificationFilter = .nearest
+            layer.minificationFilter = .nearest
+            layer.allowsEdgeAntialiasing = false
+        }
     }
-
     func attach(to parent: NSPanel) {
         parent.addChildWindow(panel, ordered: .above)
     }
