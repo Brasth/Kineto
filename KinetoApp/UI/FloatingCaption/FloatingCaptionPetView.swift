@@ -39,8 +39,8 @@ struct FloatingCaptionPetView: View {
                 effectiveMotion == .subtle ? .easeOut(duration: 0.18) : nil,
                 value: state
             )
+            .contentShape(Rectangle().scale(2.2)) // generous hit area around tiny sprite, no layout size change
             .allowsHitTesting(state.isPanelDragEligible)
-            .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { onPanelDragChanged($0.translation) }
@@ -48,7 +48,6 @@ struct FloatingCaptionPetView: View {
             )
             .accessibilityHidden(true)
     }
-
     private var sprite: some View {
         let theme = FloatingCaptionPetCatalog.theme(for: visualPreferences.appearance)
 

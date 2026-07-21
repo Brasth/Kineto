@@ -599,10 +599,10 @@ final class AppModel {
             }
             let snapshot = try await meetingStore.snapshot(for: saved.meeting.id)
             activeMeeting = snapshot.meeting
-            segments = snapshot.segments
+            let active = snapshot.meeting.activeSources
+            segments = snapshot.segments.filter { active.contains($0.source.active) }
             translations = snapshot.translations
-            gaps = snapshot.gaps
-            summary = snapshot.summary
+            gaps = snapshot.gaps.filter { active.contains($0.source.active) }
             chatTurns = snapshot.chatTurns
             screen = .summary
             await refreshMeetings()
@@ -695,16 +695,16 @@ final class AppModel {
                 }
             }
 
+            let activeSources: ActiveSources = includeMicrophone ? .all : [.selectedSource]
+
             let meeting = Meeting(
                 title: "Meeting \(Date().formatted(date: .abbreviated, time: .shortened))",
-                retainsAudio: false
+                retainsAudio: false,
+                activeSources: activeSources
             )
-            try await meetingStore.create(meeting)
-            createdMeeting = meeting
-            try await meetingStore.updateState(.recording, for: meeting.id)
             let captureEvents = try await capture.start(
                 target: selectedTarget,
-                includeMicrophone: includeMicrophone
+                includeMicrophone: activeSources.contains(.you)
             )
             let transcriptEvents: AsyncStream<TranscriptEvent>
 
@@ -725,7 +725,7 @@ final class AppModel {
                     throw SpeechRecognitionError.modelUnavailable
                 }
                 let youRecognizer: WhisperRecognizer
-                if includeMicrophone {
+                if activeSources.contains(.you) {
                     if let secondaryRecognizer {
                         youRecognizer = secondaryRecognizer
                     } else if let modelURL = recognizerModelURL {
@@ -736,7 +736,7 @@ final class AppModel {
                         youRecognizer = primary
                     }
                 } else {
-                    youRecognizer = primary
+                    youRecognizer = primary   // will not be used for .you since no frames will arrive
                 }
                 let whisperCoordinator = TranscriptCoordinator(
                     meetingID: meeting.id,
@@ -783,9 +783,11 @@ final class AppModel {
         isCaptureCommandInFlight = true
         defer { isCaptureCommandInFlight = false }
         guard let meeting = activeMeeting else { return }
+        let micForResume = meeting.activeSources.contains(.you)
+
         do {
             if isPaused {
-                try await capture.resume(includeMicrophone: includeMicrophone)
+                try await capture.resume(includeMicrophone: micForResume)
                 do {
                     try await meetingStore.updateState(.recording, for: meeting.id)
                     isPaused = false
@@ -815,7 +817,7 @@ final class AppModel {
                     signalGatePhase = .paused
                 } catch {
                     do {
-                        try await capture.resume(includeMicrophone: includeMicrophone)
+                        try await capture.resume(includeMicrophone: micForResume)
                         isPaused = false
                         signalGatePhase = .capturing
                     } catch {
@@ -1095,6 +1097,16 @@ final class AppModel {
     }
 
     private func consume(_ event: TranscriptEvent) async {
+        // Defensive: only accept events for sources that were active for this meeting.
+        if let active = activeMeeting?.activeSources {
+            switch event {
+            case let .finalized(s): if !active.contains(s.source.active) { return }
+            case let .volatile(v): if !active.contains(v.source.active) { return }
+            case let .gap(g): if !active.contains(g.source.active) { return }
+            default: break
+            }
+        }
+
         switch event {
         case let .finalized(segment):
             segments.append(segment)

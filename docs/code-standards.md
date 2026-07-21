@@ -27,6 +27,7 @@ These rules apply to `KinetoApp/` and `Packages/KinetoCore/`. The enforced basel
 - Keep source labels truthful: `.you` is microphone input and `.selectedSource` is the chosen application/display boundary. Do not infer a speaker identity or call application-wide/browser-wide audio “the meeting.”
 - Domain initializers enforce local invariants at creation (`Segment` currently requires nonnegative, ordered times). Storage must revalidate cross-record and package invariants when reopening untrusted bytes.
 - `Meeting` and `MeetingSnapshot` are mutable aggregates only to perform validated state transitions and append records inside `MeetingPackageStore`; callers must not use mutable snapshots as alternate persistence.
+- `Meeting` must record `activeSources` at creation (the immutable set of capture tracks for that meeting). Only sources present in a meeting's `activeSources` may ever produce `Segment` or `TranscriptGap` records for it. UI and ASR must respect the recorded fact (never show "You" for a mic-off meeting).
 
 ## Storage and privacy
 

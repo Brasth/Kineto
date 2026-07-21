@@ -57,6 +57,15 @@ public enum AudioSource: String, Codable, Hashable, Sendable {
     case selectedSource
 }
 
+extension AudioSource {
+    public var active: ActiveSources {
+        switch self {
+        case .you: return .you
+        case .selectedSource: return .selectedSource
+        }
+    }
+}
+
 /// Presentation label derived only from capture source.
 /// Not speaker identity: microphone is `you`, app/display mix is `selectedSource`.
 public enum SpeakerLabel: String, Codable, Hashable, Sendable {
