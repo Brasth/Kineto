@@ -62,6 +62,23 @@ jobs:
           npm install --global --no-fund --no-audit create-dmg@8.1.0
           node -e 'const { execFileSync } = require("node:child_process"); const data = JSON.parse(execFileSync("npm", ["list", "--global", "create-dmg", "--depth=0", "--json"], { encoding: "utf8" })); const v = data.dependencies?.["create-dmg"]?.version; if (v !== "8.1.0") { throw new Error(`Expected create-dmg 8.1.0, got ${v ?? "missing"}`); } console.log(`create-dmg ${v}`);'
 
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install cmake
+
+      - name: Download pinned whisper model
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./scripts/download-whisper-model.sh
+
+      - name: Build pinned CWhisper XCFramework
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./scripts/build-whisper-xcframework.sh
       - name: Derive internal artifact metadata
         id: metadata
         shell: bash
