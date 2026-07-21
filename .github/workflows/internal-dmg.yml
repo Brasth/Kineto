@@ -38,11 +38,12 @@ jobs:
           [[ "$(uname -s)" == "Darwin" ]] || { echo 'Expected a macOS runner' >&2; exit 1; }
           [[ "$(uname -m)" == "arm64" ]] || { echo 'Expected an arm64 runner' >&2; exit 1; }
 
-          XCODE_VERSION="$(xcodebuild -version | awk '/^Xcode / { print $2; exit }')"
-          [[ -n "$XCODE_VERSION" ]] || { echo 'Unable to determine Xcode version' >&2; exit 1; }
-          xcodebuild -version
           XCODE_PATH="$(xcode-select -p)"
           [[ -d "$XCODE_PATH" ]] || { echo "Xcode developer directory is missing: $XCODE_PATH" >&2; exit 1; }
+
+          XCODE_VERSION="$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$XCODE_PATH/../Info.plist" 2>/dev/null || true)"
+          [[ -n "$XCODE_VERSION" ]] || { echo 'Unable to determine Xcode version' >&2; exit 1; }
+          xcodebuild -version 2>&1 | cat
 
           SDK_VERSION="$(xcrun --sdk macosx --show-sdk-version)"
           SDK_PATH="$(xcrun --sdk macosx --show-sdk-path)"
