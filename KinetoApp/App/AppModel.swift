@@ -29,6 +29,12 @@ enum CapturePresentationMode: Sendable, Equatable {
     case mainWindow
     case floating
 }
+enum PetDexCatalogStatus: Equatable, Sendable {
+    case idle
+    case loading
+    case ready(isStale: Bool)
+    case failed(message: String, hasCachedCatalog: Bool)
+}
 
 @MainActor
 
@@ -47,48 +53,43 @@ final class AppModel {
     private var isRestoringPetSettings = false
 
     private struct PetSettingsSnapshot: Codable {
-        static let currentVersion = 1
+        static let currentVersion = 2
 
         let version: Int
         let enabled: Bool?
-        let appearance: String?
+        let selectedPetID: String?
         let size: String?
         let motion: String?
-        let accent: String?
 
         private enum CodingKeys: String, CodingKey {
             case version
             case enabled
-            case appearance
+            case selectedPetID
             case size
             case motion
-            case accent
         }
 
         init(
             version: Int = Self.currentVersion,
             enabled: Bool,
-            appearance: FloatingCaptionPetAppearance,
+            selectedPetID: String?,
             size: FloatingCaptionPetSize,
-            motion: FloatingCaptionPetMotion,
-            accent: FloatingCaptionPetAccent
+            motion: FloatingCaptionPetMotion
         ) {
             self.version = version
             self.enabled = enabled
-            self.appearance = appearance.rawValue
+            self.selectedPetID = selectedPetID
             self.size = size.rawValue
             self.motion = motion.rawValue
-            self.accent = accent.storageValue
         }
 
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             version = try container.decode(Int.self, forKey: .version)
             enabled = try? container.decode(Bool.self, forKey: .enabled)
-            appearance = try? container.decode(String.self, forKey: .appearance)
+            selectedPetID = try? container.decode(String.self, forKey: .selectedPetID)
             size = try? container.decode(String.self, forKey: .size)
             motion = try? container.decode(String.self, forKey: .motion)
-            accent = try? container.decode(String.self, forKey: .accent)
         }
     }
 
@@ -131,12 +132,14 @@ final class AppModel {
             persistPetSettings()
         }
     }
-    var petAppearance: FloatingCaptionPetAppearance = .signal {
-        didSet {
-            guard !isRestoringPetSettings else { return }
-            persistPetSettings()
-        }
-    }
+
+    private(set) var selectedPet: PetDexInstalledPet?
+    private(set) var petCatalog: [PetDexCatalogItem] = []
+    private(set) var petCatalogStatus: PetDexCatalogStatus = .idle
+    private(set) var installingPetSlug: String?
+    private(set) var retryPetSlug: String?
+    private var isPetCatalogStale = false
+
     var petSize: FloatingCaptionPetSize = .standard {
         didSet {
             guard !isRestoringPetSettings else { return }
@@ -149,12 +152,8 @@ final class AppModel {
             persistPetSettings()
         }
     }
-    var petAccent = FloatingCaptionPetVisualPreferences.default.accent {
-        didSet {
-            guard !isRestoringPetSettings else { return }
-            persistPetSettings()
-        }
-    }
+
+    private let petCatalogRepository: any PetCatalogRepository
     /// Which engine is actually running this meeting (after fallback).
     private(set) var activeASREngine: ASREnginePreference = .appleSpeech
     private(set) var asrEngineNotice: String?
@@ -213,7 +212,7 @@ final class AppModel {
     private var recognizerModelURL: URL?
     private let appleSpeechCapability = AppleSpeechCapability()
 
-    init() {
+    init(petCatalogRepository: (any PetCatalogRepository)? = nil) {
         let applicationSupport = FileManager.default.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
@@ -224,6 +223,13 @@ final class AppModel {
         try? FileManager.default.createDirectory(at: modelRoot, withIntermediateDirectories: true)
         meetingStore = MeetingPackageStore(rootURL: meetings)
         modelStore = ModelStore(rootURL: modelRoot)
+
+        let petsRoot = applicationSupport.appending(path: "Pets", directoryHint: .isDirectory)
+        try? FileManager.default.createDirectory(at: petsRoot, withIntermediateDirectories: true)
+        self.petCatalogRepository = petCatalogRepository ?? PetDexCatalogRepository(
+            transport: PetDexXPCClient(),
+            store: PetDexCatalogStore(root: petsRoot)
+        )
 
         pickerObserver.onSelection = { [weak self] filter in
             self?.select(filter: filter)
@@ -248,59 +254,46 @@ final class AppModel {
         }
         restorePetSettings()
         configureContentSharingPicker()
-    }
 
-    func selectPetTheme(_ theme: FloatingCaptionPetTheme) {
-        isRestoringPetSettings = true
-        petAppearance = theme.appearance
-        petAccent = theme.defaultAccent
-        isRestoringPetSettings = false
-        persistPetSettings()
+        Task { [weak self] in
+            await self?.preparePetCatalog()
+        }
     }
 
     private func restorePetSettings() {
         let defaults = UserDefaults.standard
-        let defaultPreferences = FloatingCaptionPetVisualPreferences.default
         let legacyEnabled = defaults.object(forKey: "kineto.petModeEnabled") as? Bool ?? false
-        let legacyAppearance = defaults.string(forKey: "kineto.petAppearance")
-            .flatMap(FloatingCaptionPetAppearance.init(rawValue:))
-            ?? defaultPreferences.appearance
         let legacySize = defaults.string(forKey: "kineto.petSize")
-            .flatMap(FloatingCaptionPetSize.init(rawValue:))
-            ?? defaultPreferences.size
+            .flatMap(FloatingCaptionPetSize.init(rawValue:)) ?? .standard
         let legacyMotion = defaults.string(forKey: "kineto.petMotion")
-            .flatMap(FloatingCaptionPetMotion.init(rawValue:))
-            ?? defaultPreferences.motion
-        let legacyAccent = defaults.string(forKey: "kineto.petAccent")
-            .flatMap(FloatingCaptionPetAccent.init(storageValue:))
-            ?? defaultPreferences.accent
+            .flatMap(FloatingCaptionPetMotion.init(rawValue:)) ?? .subtle
+
         let rawSnapshotData = defaults.data(forKey: Self.petSettingsKey)
-        let snapshot = rawSnapshotData
-            .flatMap { try? JSONDecoder().decode(PetSettingsSnapshot.self, from: $0) }
+        let snapshot = rawSnapshotData.flatMap { try? JSONDecoder().decode(PetSettingsSnapshot.self, from: $0) }
 
         isRestoringPetSettings = true
         defer { isRestoringPetSettings = false }
+
         if let snapshot, snapshot.version == PetSettingsSnapshot.currentVersion {
             petModeEnabled = snapshot.enabled ?? legacyEnabled
-            petAppearance = snapshot.appearance
-                .flatMap(FloatingCaptionPetAppearance.init(rawValue:))
-                ?? legacyAppearance
-            petSize = snapshot.size
-                .flatMap(FloatingCaptionPetSize.init(rawValue:))
-                ?? legacySize
-            petMotion = snapshot.motion
-                .flatMap(FloatingCaptionPetMotion.init(rawValue:))
-                ?? legacyMotion
-            petAccent = snapshot.accent
-                .flatMap(FloatingCaptionPetAccent.init(storageValue:))
-                ?? legacyAccent
-        } else {
-            petModeEnabled = legacyEnabled
-            petAppearance = legacyAppearance
+            petSize = snapshot.size.flatMap(FloatingCaptionPetSize.init(rawValue:)) ?? legacySize
+            petMotion = snapshot.motion.flatMap(FloatingCaptionPetMotion.init(rawValue:)) ?? legacyMotion
+            selectedPetID = snapshot.selectedPetID
+            // selectedPet resolved later in preparePetCatalog()
+        } else if let snapshot, snapshot.version > PetSettingsSnapshot.currentVersion {
+            // Future version - leave untouched
+            petModeEnabled = false
             petSize = legacySize
             petMotion = legacyMotion
-            petAccent = legacyAccent
+            selectedPetID = nil
+        } else {
+            // v1 or legacy or no snapshot: migrate to v2 with selection cleared
+            petModeEnabled = false
+            petSize = legacySize
+            petMotion = legacyMotion
+            selectedPetID = nil
         }
+
         if rawSnapshotData == nil || snapshot.map({ $0.version <= PetSettingsSnapshot.currentVersion }) == true {
             persistPetSettings()
         }
@@ -309,10 +302,9 @@ final class AppModel {
     private func persistPetSettings() {
         let snapshot = PetSettingsSnapshot(
             enabled: petModeEnabled,
-            appearance: petAppearance,
+            selectedPetID: selectedPetID,
             size: petSize,
-            motion: petMotion,
-            accent: petAccent
+            motion: petMotion
         )
         guard let data = try? JSONEncoder().encode(snapshot) else { return }
         UserDefaults.standard.set(data, forKey: Self.petSettingsKey)
@@ -534,13 +526,14 @@ final class AppModel {
         capturePresentationMode = .floating
     }
 
-    var floatingCaptionPetVisualPreferences: FloatingCaptionPetVisualPreferences {
-        FloatingCaptionPetVisualPreferences(
-            appearance: petAppearance,
-            size: petSize,
-            motion: petMotion,
-            accent: petAccent
-        )
+    var floatingCaptionPetVisualPreferences: FloatingCaptionPetVisualPreferences? {
+        selectedPet.map {
+            FloatingCaptionPetVisualPreferences(
+                pet: $0,
+                size: petSize,
+                motion: petMotion
+            )
+        }
     }
 
     var floatingCaptionOverlayPresentation: FloatingCaptionOverlayPresentation {
@@ -555,11 +548,10 @@ final class AppModel {
                 segments: segments,
                 translations: translations,
                 volatileTranscripts: Array(volatileTranscripts.values),
-                petModeEnabled: petModeEnabled
+                petVisible: petModeEnabled && selectedPet != nil
             ),
             petVisualPreferences: floatingCaptionPetVisualPreferences,
-            signalGatePresentation: gatePresentation,
-            theme: petAppearance
+            signalGatePresentation: gatePresentation
         )
     }
 
@@ -1362,5 +1354,103 @@ final class AppModel {
             return false
         }
     }
+
+    // MARK: - PetDex catalog (v2 cutover)
+
+    private var selectedPetID: String?  // restored from snapshot, used to re-select after catalog load
+
+    func selectPet(slug: String) async {
+        guard installingPetSlug == nil,
+              petCatalog.contains(where: { $0.slug == slug }) else {
+            return
+        }
+
+        installingPetSlug = slug
+        defer { installingPetSlug = nil }
+
+        do {
+            let installed = try await petCatalogRepository.install(slug: slug)
+            selectedPet = installed
+            selectedPetID = installed.id
+            retryPetSlug = nil
+            petCatalogStatus = .ready(isStale: isPetCatalogStale)
+            persistPetSettings()
+        } catch {
+            retryPetSlug = slug
+            petCatalogStatus = .failed(
+                message: catalogMessage(for: error),
+                hasCachedCatalog: !petCatalog.isEmpty
+            )
+        }
+    }
+
+    func invalidateSelectedPet(id: String) {
+        guard selectedPet?.id == id || selectedPetID == id else { return }
+
+        selectedPet = nil
+        selectedPetID = nil
+        petModeEnabled = false
+        persistPetSettings()
+        errorMessage = "Selected companion needs to be downloaded again."
+    }
+
+    func refreshPetCatalog() async {
+        guard petCatalogStatus != .loading else { return }
+
+        let precedingStatus = petCatalogStatus
+        petCatalogStatus = .loading
+        do {
+            let snapshot = try await petCatalogRepository.refreshCatalog()
+            petCatalog = snapshot.items
+            isPetCatalogStale = false
+            petCatalogStatus = .ready(isStale: false)
+        } catch {
+            if (error as NSError).code == 7 {
+                petCatalogStatus = precedingStatus
+            } else if let cached = await petCatalogRepository.loadCachedCatalog() {
+                petCatalog = cached.items
+                isPetCatalogStale = true
+                petCatalogStatus = .ready(isStale: true)
+            } else {
+                petCatalogStatus = .failed(
+                    message: catalogMessage(for: error),
+                    hasCachedCatalog: false
+                )
+            }
+        }
+    }
+
+    func preparePetCatalog() async {
+        if let cached = await petCatalogRepository.loadCachedCatalog() {
+            petCatalog = cached.items
+            isPetCatalogStale = true
+            petCatalogStatus = .ready(isStale: true)
+        }
+
+        guard let id = selectedPetID else { return }
+        if let installed = await petCatalogRepository.loadInstalledPet(id: id) {
+            selectedPet = installed
+        } else {
+            invalidateSelectedPet(id: id)
+            petCatalogStatus = .failed(
+                message: "Selected companion needs to be downloaded again.",
+                hasCachedCatalog: !petCatalog.isEmpty
+            )
+        }
+    }
+
+    private func catalogMessage(for error: Error) -> String {
+        switch (error as NSError).code {
+        case 1:
+            "PetDex is unavailable. Check your connection and try again."
+        case 2, 3, 5, 6:
+            "PetDex returned data Kineto could not safely use."
+        case 4:
+            "That companion is no longer available on PetDex."
+        default:
+            "PetDex is unavailable. Check your connection and try again."
+        }
+    }
+
 }
 

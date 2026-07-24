@@ -143,11 +143,21 @@ cp "$NOTICES" "$STAGED_APP/Contents/Resources/THIRD_PARTY_NOTICES"
   echo "Failed to stage third-party notices in Kineto.app" >&2
   exit 1
 }
+# Bundle bypass instructions at the root of the DMG (visible when user mounts it).
+# This helps people without an Apple Developer account open the unsigned CI build.
+INSTRUCTIONS_SRC="$ROOT/docs/unsigned-dmg-instructions.txt"
+INSTRUCTIONS_DST="$STAGING_ROOT/INSTALL-INSTRUCTIONS.txt"
+cp "$INSTRUCTIONS_SRC" "$INSTRUCTIONS_DST"
+[[ -f "$INSTRUCTIONS_DST" ]] || {
+  echo "Failed to stage install instructions" >&2
+  exit 1
+}
 
-printf 'Creating unsigned DMG with create-dmg; notices are bundled at Kineto.app/Contents/Resources/THIRD_PARTY_NOTICES\n'
+printf 'Creating unsigned DMG with create-dmg; notices inside app + INSTALL-INSTRUCTIONS.txt at DMG root\n'
 create-dmg \
   --no-code-sign \
   --overwrite \
+  --add-file "INSTALL-INSTRUCTIONS.txt" "$INSTRUCTIONS_DST" 0 0 \
   "$STAGED_APP" \
   "$GENERATED_ROOT"
 

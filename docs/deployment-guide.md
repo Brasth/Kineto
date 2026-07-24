@@ -153,42 +153,53 @@ xcodebuild -project Kineto.xcodeproj -scheme Kineto \
 ```
 
 Launch the resulting Debug app from Xcode and exercise the changed workflow. There are currently no app/UI test targets in the shared scheme, so `swift test` does not prove launch, TCC, ScreenCaptureKit, Translation asset, Foundation Models, signing, or Gatekeeper behavior.
+## Local-first signed + notarized DMG (use the article's method locally)
 
-## Signing, notarization, and DMG pipeline
+The recommended way to distribute outside the App Store (as in the linked dev.to article) is:
+- Developer ID export
+- Polished DMG via `create-dmg`
+- Sign the DMG
+- Notarize + staple the DMG
 
-After all non-signing release gates and the known artifact-verifier defects are closed, run:
+**Local-first workflow (do this on your Mac before any CI or public release):**
 
-```bash
-./scripts/build-release-dmg.sh
-```
+1. Install the DMG tool recommended in the article:
+   ```bash
+   brew install create-dmg
+   ```
 
-The script performs the following exact pipeline:
+2. Set up a notarytool keychain profile **once** (use an app-specific password from https://appleid.apple.com):
+   ```bash
+   xcrun notarytool store-credentials "kineto-local" \
+     --apple-id "you@yourdomain.com" \
+     --team-id "YOURTEAMID" \
+     --password "your-app-specific-password"
+   ```
 
-1. Run `scripts/verify-model-artifacts.sh`.
-2. Remove and recreate `build/release/`.
-3. Archive `Kineto.xcodeproj`, scheme `Kineto`, Release configuration to `build/release/Kineto.xcarchive`.
-4. Export with `Config/ExportOptions.plist` to `build/release/export/Kineto.app` using automatic Developer ID signing.
-5. Verify the app signature with `codesign` and assess the app with `spctl`.
-6. Stage `Kineto.app` plus an `/Applications` symlink and create `build/release/Kineto.dmg`.
-7. Sign the DMG with the identity named by `DEVELOPER_ID_APPLICATION` and a secure timestamp.
-8. Submit that DMG with the Keychain profile named by `KINETO_NOTARY_PROFILE`, wait for Apple’s result, staple and validate the DMG ticket, assess the DMG with Gatekeeper, and write `build/release/Kineto.dmg.sha256`.
+3. Prepare environment for a local release build:
+   ```bash
+   export DEVELOPER_ID_APPLICATION="Developer ID Application: Your Name (YOURTEAMID)"
+   export KINETO_NOTARY_PROFILE="kineto-local"
+   ```
 
-Inspect the final bytes, not an earlier copy:
+4. Run the full local build (this will use `create-dmg` for a nice DMG if installed):
+   ```bash
+   ./scripts/build-release-dmg.sh
+   ```
 
-```bash
-shasum -a 256 -c build/release/Kineto.dmg.sha256
-codesign --verify --deep --strict --verbose=2 build/release/export/Kineto.app
-xcrun stapler validate build/release/Kineto.dmg
-spctl --assess --type open --context context:primary-signature --verbose=4 \
-  build/release/Kineto.dmg
-```
+5. Verify the result:
+   ```bash
+   DMG=build/release/Kineto.dmg
+   shasum -a 256 -c "$DMG.sha256"
+   xcrun stapler validate "$DMG"
+   spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG"
+   ```
 
-The release script submits the exact signed DMG, waits for Apple's `Accepted` result, staples and validates that DMG, then runs Gatekeeper assessment. This is the artifact users receive. The clean-account procedure below additionally mounts that same digest-recorded DMG and verifies/assesses its contained app; preserve both DMG-ticket and contained-app evidence.
+The script automatically prefers `create-dmg` (matching the article) for local builds and falls back to hdiutil. It performs the full signing + notarization + stapling flow.
+
+Output lives in `build/release/Kineto.dmg`. This is the exact artifact you would distribute.
 
 ## Clean-account Gatekeeper proof
-
-Publish only after testing the same digest-recorded DMG through the real distribution path on a clean macOS 26.1+ account. A local unquarantined file is not equivalent. After downloading it through the intended browser/channel:
-
 ```bash
 DMG="$HOME/Downloads/Kineto.dmg"
 xattr -p com.apple.quarantine "$DMG"

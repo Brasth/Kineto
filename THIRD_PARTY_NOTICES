@@ -47,3 +47,13 @@ Kineto links Apple system frameworks including SwiftUI, AppKit,
 ScreenCaptureKit, AVFoundation, Translation, Foundation Models, CryptoKit,
 and Security. These frameworks are supplied by macOS and are not redistributed
 in this repository.
+PetDex companion catalog (sprites and metadata)
+---------------------------------------------
+Source: https://petdex.dev (manifest endpoint /api/manifest)
+Usage: Catalog metadata is fetched only after the user loads or refreshes the PetDex gallery. Sprite assets are downloaded only when the user chooses "Download & Use". No meeting audio, transcripts, translations, summaries, or capture state are ever sent to PetDex. Selected sprites are stored locally.
+
+Attribution: The settings gallery displays the `submittedBy`/creator value supplied in the manifest and links each companion to its PetDex detail page. The public manifest currently carries no per-asset license field.
+
+Community asset ownership: Sprites and metadata are community-provided. Kineto downloads sprites only on the user's explicit request and does not redistribute the assets.
+
+Layout contract (enforced at load): 8 columns, classic 9-row or v2 11-row, 192:208 frame aspect, idle row 0 (six frames over 1,100 ms). Unsupported layouts are rejected.

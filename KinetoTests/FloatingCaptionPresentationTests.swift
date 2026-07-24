@@ -157,9 +157,9 @@ final class FloatingCaptionPresentationTests: XCTestCase {
                 segments: [],
                 translations: [],
                 volatileTranscripts: [],
-                petModeEnabled: false
+                petVisible: false
             ),
-            petVisualPreferences: .default,
+            petVisualPreferences: nil,
             signalGatePresentation: gatePresentation
         )
 
@@ -171,17 +171,12 @@ final class FloatingCaptionPresentationTests: XCTestCase {
         )
     }
     func testLiveOverlaySuppressesNonCapturingSignalGateActions() {
-        let caption = FloatingCaptionPresentation.live(
-            segments: [],
-            translations: [],
-            volatileTranscripts: [],
-            petModeEnabled: false
-        )
+        let caption = FloatingCaptionPresentation.live(segments: [], translations: [], volatileTranscripts: [], petVisible: false)
 
         for phase in [SignalGatePhase.hidden, .paused, .draining, .processing] {
             let presentation = FloatingCaptionOverlayPresentation(
                 caption: caption,
-                petVisualPreferences: .default,
+                petVisualPreferences: nil,
                 signalGatePresentation: SignalGatePresentation(phase: phase)
             )
 
@@ -198,7 +193,7 @@ final class FloatingCaptionPresentationTests: XCTestCase {
         for phase in [SignalGatePhase.hidden, .capturing, .paused, .draining, .processing] {
             let presentation = FloatingCaptionOverlayPresentation(
                 caption: .hidden,
-                petVisualPreferences: .default,
+                petVisualPreferences: nil,
                 signalGatePresentation: SignalGatePresentation(phase: phase)
             )
 
@@ -240,12 +235,7 @@ final class FloatingCaptionPresentationTests: XCTestCase {
             text: "Must not be associated"
         )
 
-        let presentation = FloatingCaptionPresentation.live(
-            segments: segments,
-            translations: [unrelatedTranslation, translation],
-            volatileTranscripts: [],
-            petModeEnabled: false
-        )
+        let presentation = FloatingCaptionPresentation.live(segments: segments, translations: [unrelatedTranslation, translation], volatileTranscripts: [], petVisible: false)
 
         XCTAssertTrue(presentation.isVisible)
         XCTAssertEqual(presentation.header.captureStatus, .capturing)
@@ -287,12 +277,7 @@ final class FloatingCaptionPresentationTests: XCTestCase {
             language: .english
         )
 
-        let presentation = FloatingCaptionPresentation.live(
-            segments: [earlyFinal, laterFinal],
-            translations: [],
-            volatileTranscripts: [activeVolatile],
-            petModeEnabled: true
-        )
+        let presentation = FloatingCaptionPresentation.live(segments: [earlyFinal, laterFinal], translations: [], volatileTranscripts: [activeVolatile], petVisible: true)
 
         XCTAssertEqual(
             presentation.lines.map(\.id),
@@ -315,18 +300,8 @@ final class FloatingCaptionPresentationTests: XCTestCase {
             language: .english
         )
 
-        let withoutVolatile = FloatingCaptionPresentation.live(
-            segments: [],
-            translations: [],
-            volatileTranscripts: [],
-            petModeEnabled: true
-        )
-        let withVolatile = FloatingCaptionPresentation.live(
-            segments: [],
-            translations: [],
-            volatileTranscripts: [volatileTranscript],
-            petModeEnabled: true
-        )
+        let withoutVolatile = FloatingCaptionPresentation.live(segments: [], translations: [], volatileTranscripts: [], petVisible: true)
+        let withVolatile = FloatingCaptionPresentation.live(segments: [], translations: [], volatileTranscripts: [volatileTranscript], petVisible: true)
 
         XCTAssertEqual(withoutVolatile.petState, .settled)
         XCTAssertEqual(withVolatile.petState, .settled)
@@ -382,12 +357,7 @@ final class FloatingCaptionPresentationTests: XCTestCase {
             language: .english
         )
 
-        let presentation = FloatingCaptionPresentation.live(
-            segments: [excludedOldFinal, finalTieLow, finalTieHigh],
-            translations: [],
-            volatileTranscripts: [inactiveVolatile, activeVolatile],
-            petModeEnabled: false
-        )
+        let presentation = FloatingCaptionPresentation.live(segments: [excludedOldFinal, finalTieLow, finalTieHigh], translations: [], volatileTranscripts: [inactiveVolatile, activeVolatile], petVisible: false)
 
         XCTAssertEqual(
             presentation.lines.map(\.id),
@@ -432,12 +402,7 @@ final class FloatingCaptionPresentationTests: XCTestCase {
             language: .english
         )
 
-        let presentation = FloatingCaptionPresentation.live(
-            segments: finalSegments,
-            translations: [],
-            volatileTranscripts: [inactiveVolatile, activeVolatile],
-            petModeEnabled: false
-        )
+        let presentation = FloatingCaptionPresentation.live(segments: finalSegments, translations: [], volatileTranscripts: [inactiveVolatile, activeVolatile], petVisible: false)
 
         XCTAssertEqual(
             presentation.lines.map(\.id),
@@ -471,12 +436,7 @@ final class FloatingCaptionPresentationTests: XCTestCase {
             language: .english
         )
 
-        let presentation = FloatingCaptionPresentation.live(
-            segments: [],
-            translations: [],
-            volatileTranscripts: [laterVolatile, earlierVolatile],
-            petModeEnabled: false
-        )
+        let presentation = FloatingCaptionPresentation.live(segments: [], translations: [], volatileTranscripts: [laterVolatile, earlierVolatile], petVisible: false)
 
         XCTAssertEqual(presentation.lines.map(\.id), [earlierVolatile.id, laterVolatile.id])
         XCTAssertEqual(presentation.activeLineID, laterVolatile.id)
@@ -655,12 +615,7 @@ final class FloatingCaptionPresentationTests: XCTestCase {
         )
     }
     func testActiveCaptureHeaderIsVisibleWithNoCaptions() {
-        let presentation = FloatingCaptionPresentation.live(
-            segments: [],
-            translations: [],
-            volatileTranscripts: [],
-            petModeEnabled: false
-        )
+        let presentation = FloatingCaptionPresentation.live(segments: [], translations: [], volatileTranscripts: [], petVisible: false)
 
         XCTAssertTrue(presentation.isVisible)
         XCTAssertTrue(presentation.lines.isEmpty)
@@ -671,29 +626,14 @@ final class FloatingCaptionPresentationTests: XCTestCase {
         // PetView receives only high-level non-content state (settled/hidden).
         // No transcript content, volatile presence, source identity, or sentiment
         // may ever influence the pet state.
-        let withVolatile = FloatingCaptionPresentation.live(
-            segments: [Segment(meetingID: UUID(), source: .you, startTime: 0, endTime: 1, language: .english, text: "hello", isFinal: true)],
-            translations: [],
-            volatileTranscripts: [VolatileTranscript(id: "v1", source: .you, text: "speaking", startTime: 0, endTime: 0.5, language: .english)],
-            petModeEnabled: true
-        )
-        let withoutVolatile = FloatingCaptionPresentation.live(
-            segments: [],
-            translations: [],
-            volatileTranscripts: [],
-            petModeEnabled: true
-        )
+        let withVolatile = FloatingCaptionPresentation.live(segments: [Segment(meetingID: UUID(), source: .you, startTime: 0, endTime: 1, language: .english, text: "hello", isFinal: true)], translations: [], volatileTranscripts: [VolatileTranscript(id: "v1", source: .you, text: "speaking", startTime: 0, endTime: 0.5, language: .english)], petVisible: true)
+        let withoutVolatile = FloatingCaptionPresentation.live(segments: [], translations: [], volatileTranscripts: [], petVisible: true)
 
         XCTAssertEqual(withVolatile.petState, .settled)
         XCTAssertEqual(withoutVolatile.petState, .settled)
 
         // Hidden when disabled, regardless of anything else.
-        let disabled = FloatingCaptionPresentation.live(
-            segments: [],
-            translations: [],
-            volatileTranscripts: [],
-            petModeEnabled: false
-        )
+        let disabled = FloatingCaptionPresentation.live(segments: [], translations: [], volatileTranscripts: [], petVisible: false)
         XCTAssertEqual(disabled.petState, .hidden)
     }
 }
