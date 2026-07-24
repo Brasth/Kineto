@@ -1,0 +1,31 @@
+IMPORTANT: This is an UNSIGNED internal development build.
+
+Because this DMG is not code-signed or notarized, macOS will show:
+
+    "Kineto" is damaged and can’t be opened.
+
+This is normal for builds made without an Apple Developer account.
+
+HOW TO OPEN ON YOUR MAC (for testing only):
+
+1. Download the DMG.
+2. Remove the quarantine flag:
+
+   xattr -cr ~/Downloads/Kineto-*.dmg
+
+3. Open the DMG.
+4. Drag Kineto.app to your Applications folder (or Desktop).
+5. Remove quarantine from the app:
+
+   xattr -cr /Applications/Kineto.app
+
+6. Right-click Kineto.app → Open (do this the first time).
+
+After the first successful launch you can usually open it normally.
+
+NOTES:
+- This only works on the machine where you run the commands.
+- You cannot distribute this build to other people — they will get the same error.
+- For real distribution you need a paid Apple Developer account, Developer ID signing, and notarization.
+
+This build was produced by the internal GitHub Actions workflow for development/QA use only.

@@ -125,7 +125,7 @@ extension FloatingCaptionPresentation {
         segments: [Segment],
         translations: [TranslationRecord],
         volatileTranscripts: [VolatileTranscript],
-        petModeEnabled: Bool
+        petVisible: Bool
     ) -> Self {
         let volatileCandidates = volatileTranscripts
             .filter { !$0.text.isEmpty }
@@ -152,7 +152,7 @@ extension FloatingCaptionPresentation {
                 .prefix(maximumLineCount)
                 .sorted(by: isLessRecent)
         }
-        let petState: FloatingCaptionPetState = petModeEnabled ? .settled : .hidden
+        let petState: FloatingCaptionPetState = petVisible ? .settled : .hidden
 
         return Self(
             isVisible: true,

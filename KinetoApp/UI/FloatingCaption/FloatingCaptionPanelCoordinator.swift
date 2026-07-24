@@ -57,6 +57,9 @@ final class FloatingCaptionPanelCoordinator {
         performAction: @escaping (SignalGateAction) -> Void
     ) {
         self.performAction = performAction
+        companionPanel.onAssetInvalidated = { [weak model] id in
+            model?.invalidateSelectedPet(id: id)
+        }
         guard observedModel !== model else { return }
         observedModel = model
         observationGeneration &+= 1
@@ -161,16 +164,16 @@ final class FloatingCaptionPanelCoordinator {
         )
         panel.setContentSize(hostingView.fittingSize)
 
-        if presentation.caption.petState == .hidden {
+        if presentation.caption.petState == .hidden
+            || presentation.petVisualPreferences == nil {
             companionSize = .zero
             companionPanel.orderOut()
-        } else {
+        } else if let visualPreferences = presentation.petVisualPreferences {
             companionSize = companionPanel.update(
                 state: presentation.caption.petState,
-                visualPreferences: presentation.petVisualPreferences
+                visualPreferences: visualPreferences
             )
         }
-
         if let screen {
             positionPanels(on: screen)
         }

@@ -8,6 +8,10 @@
          <BuildActionEntry buildForTesting="YES" buildForRunning="NO" buildForProfiling="NO" buildForArchiving="NO" buildForAnalyzing="NO">
             <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="100000000000000000000051" BuildableName="KinetoTests.xctest" BlueprintName="KinetoTests" ReferencedContainer="container:Kineto.xcodeproj"/>
          </BuildActionEntry>
+         <BuildActionEntry buildForTesting="YES" buildForRunning="YES" buildForProfiling="YES" buildForArchiving="YES" buildForAnalyzing="YES">
+            <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="200000000000000000000060" BuildableName="KinetoPetCatalogService.xpc" BlueprintName="KinetoPetCatalogService" ReferencedContainer="container:Kineto.xcodeproj"/>
+         </BuildActionEntry>
+
       </BuildActionEntries>
    </BuildAction>
    <TestAction buildConfiguration="Debug" selectedDebuggerIdentifier="Xcode.DebuggerFoundation.Debugger.LLDB" selectedLauncherIdentifier="Xcode.DebuggerFoundation.Launcher.LLDB" shouldUseLaunchSchemeArgsEnv="YES">

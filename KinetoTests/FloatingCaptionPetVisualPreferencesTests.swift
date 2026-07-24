@@ -1,173 +1,39 @@
+import AppKit
 import CoreGraphics
+import CryptoKit
+import Foundation
+import ImageIO
+import UniformTypeIdentifiers
 import XCTest
 @testable import Kineto
 
+private struct UnusedPetCatalogTransport: PetDexCatalogTransport {
+    func refreshCatalog() async throws -> Data {
+        throw NSError(domain: "test", code: 1)
+    }
+
+    func downloadPet(slug: String) async throws -> (petJSON: Data, sprite: Data, manifestItem: Data) {
+        throw NSError(domain: "test", code: 1)
+    }
+}
+
+private struct FixturePetCatalogTransport: PetDexCatalogTransport {
+    let petJSON: Data
+    let sprite: Data
+    let manifestItem: Data
+
+    func refreshCatalog() async throws -> Data {
+        Data()
+    }
+
+    func downloadPet(slug: String) async throws -> (petJSON: Data, sprite: Data, manifestItem: Data) {
+        (petJSON, sprite, manifestItem)
+    }
+}
+
 @MainActor
 final class FloatingCaptionPetVisualPreferencesTests: XCTestCase {
-    func testDefaultsAndPickerMetadataMatchProductContract() {
-        let preferences = FloatingCaptionPetVisualPreferences.default
-
-        XCTAssertEqual(preferences.appearance, .signal)
-        XCTAssertEqual(preferences.size, .standard)
-        XCTAssertEqual(preferences.motion, .subtle)
-        XCTAssertEqual(preferences.accent.storageValue, "#00C7BE")
-        XCTAssertEqual(FloatingCaptionPetAppearance.allCases.map(\.title), ["Signal Cat", "Orbit Fox", "Beacon Frog", "Night Owl", "Meadow Rabbit"])
-        XCTAssertEqual(FloatingCaptionPetSize.allCases.map(\.title), ["Compact", "Standard", "Large"])
-        XCTAssertEqual(FloatingCaptionPetMotion.allCases.map(\.title), ["Subtle", "Static"])
-    }
-
-    func testBuiltInPetCatalogHasStableFiveDistinctThemes() {
-        let themes = FloatingCaptionPetCatalog.builtInThemes
-
-        XCTAssertEqual(themes.count, 5)
-        XCTAssertEqual(themes.map(\.id), ["signal", "orbit", "beacon", "night", "meadow"])
-        for legacyID in ["signal", "orbit", "beacon"] {
-            XCTAssertNotNil(FloatingCaptionPetAppearance(rawValue: legacyID))
-        }
-        XCTAssertEqual(themes.map(\.title), ["Signal Cat", "Orbit Fox", "Beacon Frog", "Night Owl", "Meadow Rabbit"])
-        XCTAssertEqual(Set(themes.map(\.id)).count, themes.count)
-        XCTAssertEqual(themes.map(\.appearance), FloatingCaptionPetAppearance.allCases)
-
-        guard let firstSprite = themes.first?.sprite else {
-            XCTFail("The built-in pet catalog must not be empty")
-            return
-        }
-
-        for theme in themes {
-            XCTAssertEqual(theme.sprite.width, firstSprite.width)
-            XCTAssertEqual(theme.sprite.height, firstSprite.height)
-            XCTAssertEqual(theme.sprite.pixels.count, theme.sprite.width * theme.sprite.height)
-            XCTAssertNotNil(FloatingCaptionPetAccent(storageValue: theme.defaultAccent.storageValue))
-        }
-
-        for index in themes.indices {
-            for otherIndex in themes.indices.dropFirst(index + 1) {
-                XCTAssertNotEqual(
-                    themes[index].sprite,
-                    themes[otherIndex].sprite,
-                    "\(themes[index].id) and \(themes[otherIndex].id) must have distinct sprites"
-                )
-            }
-        }
-    }
-
-    func testAccentAcceptsOnlyCanonicalOpaqueSRGBStorage() {
-        XCTAssertEqual(FloatingCaptionPetAccent(storageValue: "#00C7BE")?.storageValue, "#00C7BE")
-        XCTAssertEqual(FloatingCaptionPetAccent(storageValue: "#ABCDEF")?.storageValue, "#ABCDEF")
-        XCTAssertEqual(FloatingCaptionPetAccent(storageValue: "#00c7be")?.storageValue, "#00C7BE")
-        XCTAssertNil(FloatingCaptionPetAccent(storageValue: "00C7BE"))
-        XCTAssertNil(FloatingCaptionPetAccent(storageValue: "#00C7BEFF"))
-        XCTAssertNil(FloatingCaptionPetAccent(storageValue: "#00C7B"))
-        XCTAssertNil(FloatingCaptionPetAccent(storageValue: "#GGGGGG"))
-        XCTAssertNil(FloatingCaptionPetAccent(storageValue: "#12345G"))
-        XCTAssertNil(FloatingCaptionPetAccent(storageValue: ""))
-    }
-
-    func testAccentNormalizesSRGBAndDiscardsAlpha() {
-        let grayscale = CGColor(gray: 0.5, alpha: 0.05)
-        let firstGrayscaleStorage = FloatingCaptionPetAccent(cgColor: grayscale)?.storageValue
-        let secondGrayscaleStorage = FloatingCaptionPetAccent(cgColor: grayscale)?.storageValue
-
-        XCTAssertEqual(firstGrayscaleStorage, "#808080")
-        XCTAssertEqual(secondGrayscaleStorage, firstGrayscaleStorage)
-        let color = CGColor(srgbRed: 0.25, green: 0.5, blue: 0.75, alpha: 0.2)
-
-        XCTAssertEqual(FloatingCaptionPetAccent(cgColor: color)?.storageValue, "#4080BF")
-    }
-
-    func testAccentRejectsNonFiniteGrayscaleAndRGBComponentsWithoutTrapping() {
-        if let grayscale = CGColor(
-            colorSpace: CGColorSpaceCreateDeviceGray(),
-            components: [CGFloat.nan, 1]
-        ) {
-            XCTAssertNil(FloatingCaptionPetAccent(cgColor: grayscale))
-        }
-
-        if let rgb = CGColor(
-            colorSpace: CGColorSpaceCreateDeviceRGB(),
-            components: [CGFloat.nan, 0.5, 0.25, 1]
-        ) {
-            XCTAssertNil(FloatingCaptionPetAccent(cgColor: rgb))
-        }
-    }
-
-    func testAppModelRestoresCurrentPetSettingsSnapshot() {
-        let defaults = UserDefaults.standard
-        let keys = [
-            "kineto.petModeEnabled",
-            "kineto.petAppearance",
-            "kineto.petSize",
-            "kineto.petMotion",
-            "kineto.petSettings",
-            "kineto.petAccent"
-        ]
-        let previousValues = keys.map { ($0, defaults.object(forKey: $0)) }
-        defer {
-            for (key, value) in previousValues {
-                if let value {
-                    defaults.set(value, forKey: key)
-                } else {
-                    defaults.removeObject(forKey: key)
-                }
-            }
-        }
-
-        defaults.set(false, forKey: "kineto.petModeEnabled")
-        defaults.set("signal", forKey: "kineto.petAppearance")
-        defaults.set("compact", forKey: "kineto.petSize")
-        defaults.set("subtle", forKey: "kineto.petMotion")
-        defaults.set("#00C7BE", forKey: "kineto.petAccent")
-        defaults.set(
-            Data(##"{"version":1,"enabled":true,"appearance":"night","size":"large","motion":"static","accent":"#123456"}"##.utf8),
-            forKey: "kineto.petSettings"
-        )
-
-        let model = AppModel()
-
-        XCTAssertTrue(model.petModeEnabled)
-        XCTAssertEqual(model.petAppearance, .night)
-        XCTAssertEqual(model.petSize, .large)
-        XCTAssertEqual(model.petMotion, .static)
-        XCTAssertEqual(model.petAccent.storageValue, "#123456")
-    }
-
-    func testAppModelLeavesUnsupportedFuturePetSettingsSnapshotUnchanged() {
-        let defaults = UserDefaults.standard
-        let keys = [
-            "kineto.petModeEnabled",
-            "kineto.petAppearance",
-            "kineto.petSize",
-            "kineto.petMotion",
-            "kineto.petSettings",
-            "kineto.petAccent"
-        ]
-        let previousValues = keys.map { ($0, defaults.object(forKey: $0)) }
-        defer {
-            for (key, value) in previousValues {
-                if let value {
-                    defaults.set(value, forKey: key)
-                } else {
-                    defaults.removeObject(forKey: key)
-                }
-            }
-        }
-
-        defaults.set(true, forKey: "kineto.petModeEnabled")
-        defaults.set("orbit", forKey: "kineto.petAppearance")
-        defaults.set("compact", forKey: "kineto.petSize")
-        defaults.set("subtle", forKey: "kineto.petMotion")
-        defaults.set("#ABCDEF", forKey: "kineto.petAccent")
-        let futureSnapshot = Data(
-            ##"{"version":2,"enabled":false,"appearance":"meadow","size":"large","motion":"static","accent":"#654321"}"##.utf8
-        )
-        defaults.set(futureSnapshot, forKey: "kineto.petSettings")
-
-        _ = AppModel()
-
-        XCTAssertEqual(defaults.data(forKey: "kineto.petSettings"), futureSnapshot)
-    }
-
-    func testPetSizesAndMotionRespectAccessibility() {
+    func testCompanionSizesAndMotionRespectAccessibility() {
         XCTAssertEqual(FloatingCaptionPetSize.compact.points, 48)
         XCTAssertEqual(FloatingCaptionPetSize.standard.points, 60)
         XCTAssertEqual(FloatingCaptionPetSize.large.points, 72)
@@ -176,51 +42,193 @@ final class FloatingCaptionPetVisualPreferencesTests: XCTestCase {
         XCTAssertEqual(FloatingCaptionPetMotion.static.effective(reduceMotion: false), .static)
     }
 
-    func testAppModelRestoresOnlyAcceptedPetPreferenceValues() {
-        let defaults = UserDefaults.standard
-        let keys = [
-            "kineto.petModeEnabled",
-            "kineto.petAppearance",
-            "kineto.petSize",
-            "kineto.petMotion",
-            "kineto.petSettings",
-            "kineto.petAccent"
-        ]
-        let previousValues = keys.map { ($0, defaults.object(forKey: $0)) }
-        defer {
-            for (key, value) in previousValues {
-                if let value {
-                    defaults.set(value, forKey: key)
-                } else {
-                    defaults.removeObject(forKey: key)
-                }
+    func testHiddenOverlayHasNoCompanionPreferences() {
+        XCTAssertEqual(FloatingCaptionOverlayPresentation.hidden.caption.petState, .hidden)
+        XCTAssertNil(FloatingCaptionOverlayPresentation.hidden.petVisualPreferences)
+    }
+
+    func testClassicAtlasUsesIdleRowZeroAndSixFrames() throws {
+        let sheet = try makeSpritesheet(rowCount: 9)
+        let frames = try PetDexSpriteFrameLoader.idleFrames(
+            data: sheet,
+            pet: makePet(data: sheet, layout: .classic8x9, rowCount: 9)
+        )
+
+        XCTAssertEqual(frames.count, 6)
+        XCTAssertEqual(frames.map(sampleRed), [0, 1, 2, 3, 4, 5])
+    }
+
+    func testV2AtlasUsesIdleRowZeroAndSixFrames() throws {
+        let sheet = try makeSpritesheet(rowCount: 11)
+        let frames = try PetDexSpriteFrameLoader.idleFrames(
+            data: sheet,
+            pet: makePet(data: sheet, layout: .v2_8x11, rowCount: 11)
+        )
+
+        XCTAssertEqual(frames.count, 6)
+        XCTAssertEqual(frames.map(sampleRed), [0, 1, 2, 3, 4, 5])
+    }
+
+    func testSpriteLoaderRejectsCorruptDataEvenWithMatchingDigest() {
+        let corrupt = Data("not an image".utf8)
+        XCTAssertThrowsError(
+            try PetDexSpriteFrameLoader.idleFrames(
+                data: corrupt,
+                pet: makePet(data: corrupt, layout: .classic8x9, rowCount: 9)
+            )
+        )
+    }
+
+    func testCatalogStoreRoundTripsCacheAndRejectsCorruptSelection() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let store = PetDexCatalogStore(root: root)
+        let sheet = try makeSpritesheet(rowCount: 9)
+        let pet = makePet(data: sheet, layout: .classic8x9, rowCount: 9)
+        let catalog = PetDexCatalogSnapshot(
+            schemaVersion: 1,
+            fetchedAt: .now,
+            items: [pet.item]
+        )
+
+        try await store.saveCatalog(catalog)
+        let cachedCatalog = await store.loadCachedCatalog()
+        XCTAssertEqual(cachedCatalog?.items, [pet.item])
+
+        try await store.saveInstalledPet(pet, spriteData: sheet)
+        let installedPet = await store.loadInstalledPet()
+        XCTAssertEqual(installedPet, pet)
+
+        let spriteURL = root
+            .appendingPathComponent("Selected", isDirectory: true)
+            .appendingPathComponent(pet.spriteFilename)
+        try Data("corrupt".utf8).write(to: spriteURL)
+        let corruptInstalledPet = await store.loadInstalledPet()
+        XCTAssertNil(corruptInstalledPet)
+    }
+
+    func testRepositoryDoesNotResolveMismatchedInstalledPetID() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let store = PetDexCatalogStore(root: root)
+        let sheet = try makeSpritesheet(rowCount: 9)
+        let pet = makePet(data: sheet, layout: .classic8x9, rowCount: 9)
+        try await store.saveInstalledPet(pet, spriteData: sheet)
+
+        let repository = PetDexCatalogRepository(
+            transport: UnusedPetCatalogTransport(),
+            store: store
+        )
+        let resolved = await repository.loadInstalledPet(id: "other@selection")
+        XCTAssertNil(resolved)
+    }
+
+    func testRepositoryRejectsDivisibleSpriteWithUnsupportedAspectRatio() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let transport = FixturePetCatalogTransport(
+            petJSON: Data(#"{"id":"bad"}"#.utf8),
+            sprite: try makeSpritesheet(rowCount: 90),
+            manifestItem: Data(
+                #"{"displayName":"Bad","kind":"cat","spritesheetUrl":"https://assets.petdex.dev/pets/bad/spritesheet.png","petJsonUrl":"https://assets.petdex.dev/pets/bad/pet.json"}"#.utf8
+            )
+        )
+        let repository = PetDexCatalogRepository(
+            transport: transport,
+            store: PetDexCatalogStore(root: root)
+        )
+
+        do {
+            _ = try await repository.install(slug: "bad")
+            XCTFail("Expected unsupported atlas layout to be rejected")
+        } catch let error as NSError {
+            XCTAssertEqual(error.domain, "KinetoPetCatalog")
+            XCTAssertEqual(error.code, 3)
+        }
+    }
+
+    private func makePet(
+        data: Data,
+        layout: PetDexAtlasLayout,
+        rowCount: Int
+    ) -> PetDexInstalledPet {
+        let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        return PetDexInstalledPet(
+            id: "fixture@\(digest)",
+            item: PetDexCatalogItem(
+                slug: "fixture",
+                displayName: "Fixture",
+                kind: "test",
+                creator: nil,
+                spritesheetURL: URL(string: "https://example.invalid/sprite.png")!,
+                petJSONURL: URL(string: "https://example.invalid/pet.json")!
+            ),
+            spriteSHA256: digest,
+            spriteFilename: "spritesheet.png",
+            pixelWidth: 8,
+            pixelHeight: rowCount,
+            layout: layout
+        )
+    }
+
+    private func makeSpritesheet(rowCount: Int) throws -> Data {
+        var pixels = [UInt8](repeating: 0, count: 8 * rowCount * 4)
+        for row in 0..<rowCount {
+            for column in 0..<8 {
+                let offset = (row * 8 + column) * 4
+                pixels[offset] = UInt8(row == 0 ? column : 100 + row)
+                pixels[offset + 3] = 255
             }
         }
 
-        defaults.set("not-an-appearance", forKey: "kineto.petAppearance")
-        defaults.set("not-a-size", forKey: "kineto.petSize")
-        defaults.set("not-a-motion", forKey: "kineto.petMotion")
-        defaults.set("#00c7be", forKey: "kineto.petAccent")
-        defaults.removeObject(forKey: "kineto.petSettings")
+        let image = try XCTUnwrap(
+            CGImage(
+                width: 8,
+                height: rowCount,
+                bitsPerComponent: 8,
+                bitsPerPixel: 32,
+                bytesPerRow: 8 * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue),
+                provider: CGDataProvider(data: Data(pixels) as CFData)!,
+                decode: nil,
+                shouldInterpolate: false,
+                intent: .defaultIntent
+            )
+        )
+        let data = NSMutableData()
+        let destination = try XCTUnwrap(
+            CGImageDestinationCreateWithData(
+                data,
+                UTType.png.identifier as CFString,
+                1,
+                nil
+            )
+        )
+        CGImageDestinationAddImage(destination, image, nil)
+        XCTAssertTrue(CGImageDestinationFinalize(destination))
+        return data as Data
+    }
 
-        let fallbackModel = AppModel()
-
-        XCTAssertEqual(fallbackModel.petAppearance, .signal)
-        XCTAssertEqual(fallbackModel.petSize, .standard)
-        XCTAssertEqual(fallbackModel.petMotion, .subtle)
-        XCTAssertEqual(fallbackModel.petAccent.storageValue, FloatingCaptionPetAccent.defaultStorageValue)
-
-        defaults.set(FloatingCaptionPetAppearance.beacon.rawValue, forKey: "kineto.petAppearance")
-        defaults.set(FloatingCaptionPetSize.large.rawValue, forKey: "kineto.petSize")
-        defaults.set(FloatingCaptionPetMotion.static.rawValue, forKey: "kineto.petMotion")
-        defaults.set("#123456", forKey: "kineto.petAccent")
-        defaults.removeObject(forKey: "kineto.petSettings")
-
-        let restoredModel = AppModel()
-
-        XCTAssertEqual(restoredModel.petAppearance, .beacon)
-        XCTAssertEqual(restoredModel.petSize, .large)
-        XCTAssertEqual(restoredModel.petMotion, .static)
-        XCTAssertEqual(restoredModel.petAccent.storageValue, "#123456")
+    private func sampleRed(_ image: NSImage) -> UInt8 {
+        let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)!
+        var pixel = [UInt8](repeating: 0, count: 4)
+        let context = CGContext(
+            data: &pixel,
+            width: 1,
+            height: 1,
+            bitsPerComponent: 8,
+            bytesPerRow: 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )!
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        return pixel[0]
     }
 }

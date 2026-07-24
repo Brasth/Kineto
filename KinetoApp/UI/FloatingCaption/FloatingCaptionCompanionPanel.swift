@@ -6,7 +6,8 @@ import SwiftUI
 @Observable
 private final class FloatingCaptionCompanionContent {
     var state: FloatingCaptionPetState = .hidden
-    var visualPreferences: FloatingCaptionPetVisualPreferences = .default
+    var visualPreferences: FloatingCaptionPetVisualPreferences?
+    var onAssetInvalidated: (String) -> Void = { _ in }
     var onPanelDragChanged: (CGSize) -> Void = { _ in }
     var onPanelDragEnded: () -> Void = {}
 }
@@ -15,17 +16,25 @@ private struct FloatingCaptionCompanionRootView: View {
     @Bindable var content: FloatingCaptionCompanionContent
 
     var body: some View {
-        FloatingCaptionPetView(
-            state: content.state,
-            visualPreferences: content.visualPreferences,
-            onPanelDragChanged: content.onPanelDragChanged,
-            onPanelDragEnded: content.onPanelDragEnded
-        )
+        if let visualPreferences = content.visualPreferences {
+            FloatingCaptionPetView(
+                state: content.state,
+                visualPreferences: visualPreferences,
+                onAssetInvalidated: content.onAssetInvalidated,
+                onPanelDragChanged: content.onPanelDragChanged,
+                onPanelDragEnded: content.onPanelDragEnded
+            )
+        } else {
+            Color.clear
+        }
     }
 }
 
 @MainActor
 final class FloatingCaptionCompanionPanel {
+    var onAssetInvalidated: (String) -> Void = { _ in } {
+        didSet { content.onAssetInvalidated = onAssetInvalidated }
+    }
     var onPanelDragChanged: (CGSize) -> Void = { _ in } {
         didSet { content.onPanelDragChanged = onPanelDragChanged }
     }

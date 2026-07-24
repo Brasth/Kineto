@@ -241,10 +241,10 @@ struct HomeView: View {
         ScrollView {
             VStack(spacing: 28) {
                 ZStack {
-                    Circle().fill(Color(cgColor: model.petAccent.cgColor).opacity(0.12)).frame(width: 112, height: 112)
+                    Circle().fill(Color.accentColor.opacity(0.12)).frame(width: 112, height: 112)
                     Image(systemName: "waveform.badge.mic")
                         .font(.system(size: 48, weight: .light))
-                        .foregroundStyle(Color(cgColor: model.petAccent.cgColor))
+                        .foregroundStyle(Color.accentColor)
                         .accessibilityHidden(true)
                 }
                 VStack(spacing: 10) {
@@ -331,7 +331,7 @@ struct HomeView: View {
                                 systemImage: model.translationReady ? "checkmark.circle.fill" : "arrow.down.circle"
                             )
                             .font(.caption)
-                            .foregroundStyle(model.translationReady ? Color(cgColor: model.petAccent.cgColor) : Color.secondary)
+                            .foregroundStyle(model.translationReady ? Color.accentColor : Color.secondary)
                         }
                         Toggle("Generate a post-meeting summary", isOn: $model.summaryEnabled)
                         if model.summaryEnabled {
