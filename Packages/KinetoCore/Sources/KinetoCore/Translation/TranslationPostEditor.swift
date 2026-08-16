@@ -64,11 +64,17 @@ private struct ProtectedToken {
     static func restore(_ draft: String, tokens: [ProtectedToken]) -> String {
         var text = draft
         for token in tokens {
-            // Apple Translation sometimes keeps the English token; sometimes it
-            // transliterates. Force the source spelling back when the token is gone.
-            if !text.contains(token.original) {
-                text = replaceWholeWord(token.original.lowercased(), with: token.original, in: text)
+            if let range = text.range(
+                of: token.original,
+                options: [.caseInsensitive, .diacriticInsensitive]
+            ) {
+                text.replaceSubrange(range, with: token.original)
+                continue
             }
+            if !text.isEmpty {
+                text.append(" ")
+            }
+            text.append(token.original)
         }
         return text
     }
@@ -81,7 +87,7 @@ private struct ProtectedToken {
 private func applyEnglishToVietnamesePhrases(source: String, draft: String) -> String {
     var text = draft
     let folded = fold(source)
-    for rule in englishToVietnamesePhrases where folded.contains(rule.trigger) {
+    for rule in englishToVietnamesePhrases where mentions(rule.trigger, in: folded) {
         for bad in rule.badDrafts {
             text = replaceCaseInsensitive(bad, with: rule.preferred, in: text)
         }
@@ -97,8 +103,11 @@ private func applyEnglishToVietnameseGlossary(
     var text = draft
     let folded = fold(source)
     for entry in englishToVietnameseGlossary {
-        guard folded.contains(entry.trigger) else { continue }
+        guard mentions(entry.trigger, in: folded) else { continue }
         if let scenarios = entry.scenarios, !scenarios.contains(scenario) { continue }
+        if scenario == .general, entry.needsSoftwareCue, !hasSoftwareReleaseCue(folded) {
+            continue
+        }
         for bad in entry.badDrafts {
             text = replaceCaseInsensitive(bad, with: entry.preferred, in: text)
         }
@@ -109,7 +118,7 @@ private func applyEnglishToVietnameseGlossary(
 private func applyVietnameseToEnglishPhrases(source: String, draft: String) -> String {
     var text = draft
     let folded = fold(source)
-    for rule in vietnameseToEnglishPhrases where folded.contains(rule.trigger) {
+    for rule in vietnameseToEnglishPhrases where mentions(rule.trigger, in: folded) {
         for bad in rule.badDrafts {
             text = replaceCaseInsensitive(bad, with: rule.preferred, in: text)
         }
@@ -121,7 +130,7 @@ private func applyVietnameseToEnglishGlossary(source: String, draft: String) -> 
     var text = draft
     let folded = fold(source)
     for entry in vietnameseToEnglishGlossary {
-        guard folded.contains(entry.trigger) else { continue }
+        guard mentions(entry.trigger, in: folded) else { continue }
         for bad in entry.badDrafts {
             text = replaceCaseInsensitive(bad, with: entry.preferred, in: text)
         }
@@ -140,6 +149,21 @@ private struct GlossaryEntry {
     let badDrafts: [String]
     let preferred: String
     let scenarios: Set<MeetingScenario>?
+    let needsSoftwareCue: Bool
+
+    init(
+        trigger: String,
+        badDrafts: [String],
+        preferred: String,
+        scenarios: Set<MeetingScenario>? = nil,
+        needsSoftwareCue: Bool = false
+    ) {
+        self.trigger = trigger
+        self.badDrafts = badDrafts
+        self.preferred = preferred
+        self.scenarios = scenarios
+        self.needsSoftwareCue = needsSoftwareCue
+    }
 }
 
 private let englishToVietnamesePhrases: [PhraseRule] = [
@@ -320,13 +344,15 @@ private let englishToVietnameseGlossary: [GlossaryEntry] = [
         trigger: "ship",
         badDrafts: ["vận chuyển", "chuyển hàng", "giao hàng", "tàu thủy"],
         preferred: "phát hành",
-        scenarios: [.standup, .planning, .general, .lecture, .support]
+        scenarios: [.standup, .planning, .general, .lecture, .support],
+        needsSoftwareCue: true
     ),
     GlossaryEntry(
         trigger: "shipping",
         badDrafts: ["vận chuyển", "đang chuyển hàng"],
         preferred: "đang phát hành",
-        scenarios: [.standup, .planning, .general, .lecture, .support]
+        scenarios: [.standup, .planning, .general, .lecture, .support],
+        needsSoftwareCue: true
     ),
     GlossaryEntry(
         trigger: "blocker",
@@ -532,18 +558,23 @@ private func fold(_ value: String) -> String {
         .lowercased()
 }
 
+private func mentions(_ trigger: String, in foldedSource: String) -> Bool {
+    foldedSource.contains(fold(trigger))
+}
+
+private let softwareReleaseCues = [
+    "checkout", "pull request", " pr ", "deploy", "release", "sprint",
+    "merge", "feature", "build", "commit", "hotfix", "bugfix", "fix",
+]
+
+private func hasSoftwareReleaseCue(_ foldedSource: String) -> Bool {
+    let padded = " \(foldedSource) "
+    return softwareReleaseCues.contains { padded.contains($0) }
+}
+
 private func replaceCaseInsensitive(_ needle: String, with replacement: String, in text: String) -> String {
     guard !needle.isEmpty, let regex = try? NSRegularExpression(
         pattern: NSRegularExpression.escapedPattern(for: needle),
-        options: [.caseInsensitive]
-    ) else { return text }
-    let range = NSRange(text.startIndex..<text.endIndex, in: text)
-    return regex.stringByReplacingMatches(in: text, range: range, withTemplate: NSRegularExpression.escapedTemplate(for: replacement))
-}
-
-private func replaceWholeWord(_ needle: String, with replacement: String, in text: String) -> String {
-    guard !needle.isEmpty, let regex = try? NSRegularExpression(
-        pattern: "\\b\(NSRegularExpression.escapedPattern(for: needle))\\b",
         options: [.caseInsensitive]
     ) else { return text }
     let range = NSRange(text.startIndex..<text.endIndex, in: text)

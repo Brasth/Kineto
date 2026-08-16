@@ -948,21 +948,14 @@ final class AppModel {
     }
 
     private func makeTranslationContext(for segment: Segment) -> TranslationContext {
-        let recent = segments
-            .filter { $0.isFinal && $0.id != segment.id }
-            .suffix(5)
-            .map { prior in
-                TranslationTurn(
-                    speaker: prior.speakerLabel,
-                    sourceLanguage: prior.language,
-                    sourceText: prior.text,
-                    translatedText: translations.first { $0.sourceSegmentID == prior.id }?.text
-                )
-            }
-        return TranslationContext(
+        TranslationContext(
             scenario: meetingScenario,
             speaker: segment.speakerLabel,
-            recentTurns: Array(recent)
+            recentTurns: TranslationContext.precedingTurns(
+                from: segments,
+                translations: translations,
+                before: segment
+            )
         )
     }
 

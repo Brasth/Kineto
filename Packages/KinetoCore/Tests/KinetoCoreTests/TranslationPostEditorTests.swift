@@ -104,15 +104,124 @@ import Testing
 
 @Test func scenarioDoesNotRewriteUnrelatedFreightShip() {
     let editor = TranslationPostEditor()
-    let context = TranslationContext(scenario: .sales, speaker: .selectedSource)
-    let edited = editor.edit(
+    let sales = editor.edit(
         source: "The warehouse will ship the hardware tomorrow.",
         draft: "Kho sẽ vận chuyển phần cứng vào ngày mai.",
         sourceLanguage: .english,
         targetLanguage: .vietnamese,
+        context: TranslationContext(scenario: .sales, speaker: .selectedSource)
+    )
+    #expect(sales.contains("vận chuyển"))
+
+    let general = editor.edit(
+        source: "We ship packages every morning.",
+        draft: "Chúng tôi vận chuyển các gói hàng mỗi sáng.",
+        sourceLanguage: .english,
+        targetLanguage: .vietnamese,
+        context: TranslationContext(scenario: .general, speaker: .selectedSource)
+    )
+    #expect(general.contains("vận chuyển"))
+    #expect(!general.contains("phát hành"))
+}
+
+@Test func generalScenarioStillRewritesSoftwareShip() {
+    let editor = TranslationPostEditor()
+    let edited = editor.edit(
+        source: "We'll ship the checkout fix on Friday.",
+        draft: "Chúng tôi sẽ vận chuyển bản sửa checkout vào thứ Sáu.",
+        sourceLanguage: .english,
+        targetLanguage: .vietnamese,
+        context: TranslationContext(scenario: .general, speaker: .selectedSource)
+    )
+    #expect(edited.contains("phát hành"))
+    #expect(!edited.contains("vận chuyển"))
+}
+
+@Test func foldedVietnameseTriggersStillMatch() {
+    let editor = TranslationPostEditor()
+    let context = TranslationContext(scenario: .planning, speaker: .you)
+    let da = editor.edit(
+        source: "Dạ em follow ticket này.",
+        draft: "Yes sir, little sibling follow this admission ticket.",
+        sourceLanguage: .vietnamese,
+        targetLanguage: .english,
         context: context
     )
-    #expect(edited.contains("vận chuyển"))
+    #expect(!da.lowercased().contains("yes sir"))
+    #expect(!da.lowercased().contains("little sibling"))
+    #expect(da.lowercased().contains("ticket"))
+}
+
+@Test func droppedIdentifiersAreRestoredFromSource() {
+    let editor = TranslationPostEditor()
+    let edited = editor.edit(
+        source: "Open KNT42 and check https://status.kineto.app please.",
+        draft: "Hãy mở và kiểm tra giúp.",
+        sourceLanguage: .english,
+        targetLanguage: .vietnamese,
+        context: TranslationContext(scenario: .support, speaker: .you)
+    )
+    #expect(edited.contains("KNT42"))
+    #expect(edited.contains("https://status.kineto.app"))
+}
+
+@Test func protectedTokenCasingIsRestored() {
+    let editor = TranslationPostEditor()
+    let edited = editor.edit(
+        source: "Ask OrbitFox about CheckOutAPI.",
+        draft: "Hỏi orbitfox về checkoutapi.",
+        sourceLanguage: .english,
+        targetLanguage: .vietnamese,
+        context: TranslationContext(scenario: .standup, speaker: .you)
+    )
+    #expect(edited.contains("OrbitFox"))
+    #expect(edited.contains("CheckOutAPI"))
+}
+
+@Test func precedingTurnsIgnoreLaterSpeech() {
+    let meetingID = UUID()
+    let opening = Segment(
+        meetingID: meetingID,
+        source: .selectedSource,
+        startTime: 0,
+        endTime: 2,
+        language: .english,
+        text: "Let's start with the checkout bug.",
+        isFinal: true
+    )
+    let middle = Segment(
+        meetingID: meetingID,
+        source: .you,
+        startTime: 3,
+        endTime: 5,
+        language: .english,
+        text: "I can take the ticket.",
+        isFinal: true
+    )
+    let closing = Segment(
+        meetingID: meetingID,
+        source: .selectedSource,
+        startTime: 20,
+        endTime: 22,
+        language: .english,
+        text: "We will ship Friday.",
+        isFinal: true
+    )
+    let turns = TranslationContext.precedingTurns(
+        from: [closing, opening, middle],
+        translations: [
+            TranslationRecord(
+                sourceSegmentID: middle.id,
+                sourceLanguage: .english,
+                targetLanguage: .vietnamese,
+                text: "Mình nhận ticket."
+            ),
+        ],
+        before: middle
+    )
+    #expect(turns.count == 1)
+    #expect(turns[0].sourceText == opening.text)
+    #expect(turns[0].translatedText == nil)
 }
 
 @Test func emptyDraftPassesThrough() {
