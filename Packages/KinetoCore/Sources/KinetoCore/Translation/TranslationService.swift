@@ -67,7 +67,10 @@ public actor TranslationService {
                 targetLanguage: target,
                 context: context
             )
-            refined = await refiner(request) ?? edited
+            refined = postEditor.restoreProtectedTokens(
+                source: segment.text,
+                text: await refiner(request) ?? edited
+            )
         } else {
             refined = edited
         }
@@ -102,7 +105,10 @@ public actor TranslationService {
             targetLanguage: targetLanguage,
             context: context
         )
-        return await refiner(request) ?? edited
+        return postEditor.restoreProtectedTokens(
+            source: source,
+            text: await refiner(request) ?? edited
+        )
     }
 
     public func cancel() {

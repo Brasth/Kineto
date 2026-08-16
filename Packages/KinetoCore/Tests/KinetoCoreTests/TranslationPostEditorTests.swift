@@ -272,3 +272,56 @@ import Testing
     #expect(MeetingScenario(rawValue: "client-call") == .clientCall)
     #expect(MeetingScenario.allCases.count == 9)
 }
+
+@Test func generalScenarioDoesNotRewritePropertyOwner() {
+    let editor = TranslationPostEditor()
+    let edited = editor.edit(
+        source: "The owner sold the building.",
+        draft: "Chủ sở hữu đã bán tòa nhà.",
+        sourceLanguage: .english,
+        targetLanguage: .vietnamese,
+        context: TranslationContext(scenario: .general, speaker: .selectedSource)
+    )
+    #expect(edited.contains("Chủ sở hữu"))
+    #expect(!edited.contains("người phụ trách"))
+}
+
+@Test func generalScenarioRewritesTaskOwner() {
+    let editor = TranslationPostEditor()
+    let edited = editor.edit(
+        source: "Who is the owner of this ticket?",
+        draft: "Ai là chủ sở hữu của vé này?",
+        sourceLanguage: .english,
+        targetLanguage: .vietnamese,
+        context: TranslationContext(scenario: .general, speaker: .selectedSource)
+    )
+    #expect(edited.contains("người phụ trách"))
+    #expect(edited.contains("ticket"))
+}
+
+@Test func phraseReplacementRespectsWordBoundaries() {
+    let editor = TranslationPostEditor()
+    let edited = editor.edit(
+        source: "Mình chốt lúc ba giờ.",
+        draft: "Lock it at three o'clock.",
+        sourceLanguage: .vietnamese,
+        targetLanguage: .english,
+        context: TranslationContext(scenario: .planning, speaker: .you)
+    )
+    #expect(edited.lowercased().contains("finalize"))
+    #expect(edited.lowercased().contains("o'clock"))
+    #expect(!edited.lowercased().contains("o'finalize"))
+}
+
+@Test func refineCannotDropProtectedTokens() async {
+    let service = TranslationService(refiner: { _ in "Hãy xem giúp." })
+    let result = await service.finalizeDraft(
+        source: "Open KNT42 and check https://status.kineto.app please.",
+        draft: "Hãy mở KNT42 và kiểm tra https://status.kineto.app.",
+        sourceLanguage: .english,
+        targetLanguage: .vietnamese,
+        context: TranslationContext(scenario: .support, speaker: .you)
+    )
+    #expect(result.contains("KNT42"))
+    #expect(result.contains("https://status.kineto.app"))
+}

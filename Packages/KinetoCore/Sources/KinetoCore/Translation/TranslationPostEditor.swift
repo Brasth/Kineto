@@ -34,6 +34,13 @@ public struct TranslationPostEditor: Sendable {
         text = ProtectedToken.restore(text, tokens: protected)
         return text
     }
+
+    public func restoreProtectedTokens(source: String, text: String) -> String {
+        let sourceText = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !sourceText.isEmpty, !body.isEmpty else { return text }
+        return ProtectedToken.restore(body, tokens: ProtectedToken.extract(from: sourceText))
+    }
 }
 
 private struct ProtectedToken {
@@ -108,6 +115,9 @@ private func applyEnglishToVietnameseGlossary(
         if scenario == .general, entry.needsSoftwareCue, !hasSoftwareReleaseCue(folded) {
             continue
         }
+        if scenario == .general, entry.needsTaskCue, !hasTaskOwnershipCue(folded) {
+            continue
+        }
         for bad in entry.badDrafts {
             text = replaceCaseInsensitive(bad, with: entry.preferred, in: text)
         }
@@ -150,19 +160,22 @@ private struct GlossaryEntry {
     let preferred: String
     let scenarios: Set<MeetingScenario>?
     let needsSoftwareCue: Bool
+    let needsTaskCue: Bool
 
     init(
         trigger: String,
         badDrafts: [String],
         preferred: String,
         scenarios: Set<MeetingScenario>? = nil,
-        needsSoftwareCue: Bool = false
+        needsSoftwareCue: Bool = false,
+        needsTaskCue: Bool = false
     ) {
         self.trigger = trigger
         self.badDrafts = badDrafts
         self.preferred = preferred
         self.scenarios = scenarios
         self.needsSoftwareCue = needsSoftwareCue
+        self.needsTaskCue = needsTaskCue
     }
 }
 
@@ -364,7 +377,8 @@ private let englishToVietnameseGlossary: [GlossaryEntry] = [
         trigger: "owner",
         badDrafts: ["chủ sở hữu", "chủ nhân"],
         preferred: "người phụ trách",
-        scenarios: [.standup, .planning, .general, .support, .clientCall]
+        scenarios: [.standup, .planning, .general, .support, .clientCall],
+        needsTaskCue: true
     ),
     GlossaryEntry(
         trigger: "ticket",
@@ -572,11 +586,34 @@ private func hasSoftwareReleaseCue(_ foldedSource: String) -> Bool {
     return softwareReleaseCues.contains { padded.contains($0) }
 }
 
+private let taskOwnershipCues = [
+    "ticket", "sprint", "backlog", "task", "story", "epic",
+    "blocker", "standup", "pull request", " pr ",
+]
+
+private func hasTaskOwnershipCue(_ foldedSource: String) -> Bool {
+    let padded = " \(foldedSource) "
+    return taskOwnershipCues.contains { padded.contains($0) }
+}
+
 private func replaceCaseInsensitive(_ needle: String, with replacement: String, in text: String) -> String {
-    guard !needle.isEmpty, let regex = try? NSRegularExpression(
-        pattern: NSRegularExpression.escapedPattern(for: needle),
-        options: [.caseInsensitive]
+    guard !needle.isEmpty else { return text }
+    let escaped = NSRegularExpression.escapedPattern(for: needle)
+    let startsWithWord = needle.unicodeScalars.first.map(isWordScalar) ?? false
+    let endsWithWord = needle.unicodeScalars.last.map(isWordScalar) ?? false
+    let pattern = (startsWithWord && endsWithWord) ? "\\b\(escaped)\\b" : escaped
+    guard let regex = try? NSRegularExpression(
+        pattern: pattern,
+        options: [.caseInsensitive, .useUnicodeWordBoundaries]
     ) else { return text }
     let range = NSRange(text.startIndex..<text.endIndex, in: text)
-    return regex.stringByReplacingMatches(in: text, range: range, withTemplate: NSRegularExpression.escapedTemplate(for: replacement))
+    return regex.stringByReplacingMatches(
+        in: text,
+        range: range,
+        withTemplate: NSRegularExpression.escapedTemplate(for: replacement)
+    )
+}
+
+private func isWordScalar(_ scalar: Unicode.Scalar) -> Bool {
+    CharacterSet.alphanumerics.contains(scalar) || scalar == "_"
 }
