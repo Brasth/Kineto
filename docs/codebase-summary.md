@@ -78,13 +78,17 @@ Screen/system audio is configured at 48 kHz stereo and normalized before ASR. Ki
 
 | File | Primary symbols |
 |---|---|
-| `Translation/TranslationService.swift` | `TranslationService`; actor-owned installed-language sessions and finalized-only English↔Vietnamese records |
+| `Translation/MeetingScenario.swift` | `MeetingScenario`; user-selected room type that steers register and glossary |
+| `Translation/TranslationContext.swift` | `TranslationContext`, `TranslationTurn`; recent finalized clauses plus speaker |
+| `Translation/TranslationPostEditor.swift` | Deterministic EN↔VI meeting-register rewrite of an Apple Translation draft |
+| `Translation/TranslationRefiner.swift` | Optional on-device Foundation Models rewrite; no-ops when unavailable |
+| `Translation/TranslationService.swift` | `TranslationService`; actor-owned installed-language sessions, post-edit, optional refine, finalized-only English↔Vietnamese records |
 | `Summary/SummaryService.swift` | `SummaryService`; stopped-meeting-only Foundation Models generation, 6,000-character chunks, maximum 24 accepted items |
 | `Summary/EvidenceValidator.swift` | `EvidenceValidator`; rejects missing/unknown evidence and non-extractive text |
 | `Chat/MeetingLexicalRetriever.swift` | `MeetingLexicalRetriever`; deterministic in-memory final-segment retrieval with gap boundaries |
 | `Chat/MeetingChatService.swift` | `MeetingChatService`; fresh tool-free local Foundation Models question answering, strict source citations, and truthful no-answer outcomes |
 
-SwiftUI `translationTask` sessions remain scoped to their task closures and prepare both EN↔VI asset directions before a translation-enabled meeting starts. Translation is triggered from finalized events through separately created actor-owned installed-language sessions, tracked independently, and stored idempotently per source segment and target language. Stop cancels unfinished derived translation work, seals the authoritative source transcript without waiting on external translation calls, and then runs summary generation. Summary generation uses no tools, treats transcript text as untrusted data, and emits overview/decision/action items. Local chat runs only from one stopped snapshot: it retrieves final source segments with prompt-only non-citable gap boundaries; translations, summaries, prior turns, audio, remote providers, and other meetings never enter its fresh tool-free model session. Grounded turns require literal contiguous final-segment citations; `noRelevantEvidence` turns store none, while model/output failures retain retrieved excerpts only.
+SwiftUI `translationTask` sessions remain scoped to their task closures and prepare both EN↔VI asset directions before a translation-enabled meeting starts. Translation is triggered from finalized events through separately created actor-owned installed-language sessions, tracked independently, and stored idempotently per source segment and target language. Each live call receives a `TranslationContext`: the user-selected `MeetingScenario`, the clause speaker, and the last few finalized source/translation turns. Apple Translation still produces the first draft; `TranslationPostEditor` then repairs known meeting-register failures (ship-as-freight, circle-back-as-geometry, kinship address, and engineering glossary collisions). An optional on-device Foundation Models rewrite may further naturalize the caption when the model is available and supports the target locale; unavailability keeps the post-edited draft. Stop cancels unfinished derived translation work, seals the authoritative source transcript without waiting on external translation calls, and then runs summary generation. Summary generation uses no tools, treats transcript text as untrusted data, and emits overview/decision/action items. Local chat runs only from one stopped snapshot: it retrieves final source segments with prompt-only non-citable gap boundaries; translations, summaries, prior turns, audio, remote providers, and other meetings never enter its fresh tool-free model session. Grounded turns require literal contiguous final-segment citations; `noRelevantEvidence` turns store none, while model/output failures retain retrieved excerpts only.
 
 ### Secure Storage
 
@@ -120,7 +124,7 @@ The pinned model is `ggml-large-v3-turbo-q5_0.bin` at whisper.cpp model revision
 | `WhisperRecognizerTests.swift` | Silence and brief-noise rejection plus sustained-audio admission |
 | `EvidenceValidatorTests.swift` | Evidence ID and extractive-support rejection |
 | `MeetingPackageStoreTests.swift` | Encrypted storage, state/record invariants, terminal source/translation rejection, reopen/export/delete behavior |
-| `KinetoCoreSmokeTests.swift` | Package-level smoke surface |
+| `TranslationPostEditorTests.swift` | Scenario glossary, phrase repair, kinship address, and optional refine seam |
 | `KinetoTests/FloatingCaptionPetVisualPreferencesTests.swift` | Five built-in themes, distinct sprites, versioned settings restore/per-field fallback, opaque canonical sRGB accent normalization, and accessibility motion behavior |
 
 This list describes test source present in the repository; it is not a claim that external release gates have passed.
