@@ -93,10 +93,11 @@ The companion appears only inside the existing floating caption overlay during a
 4. In Apple's sharing picker, choose the meeting application or an entire display and confirm sharing. Kineto excludes itself so it cannot accidentally capture a silent self-source.
 5. Keep **Include my microphone as “You”** enabled only if the microphone track is needed.
 6. Enable English ↔ Vietnamese translation if desired.
-7. Wait for **Translation assets ready**. Kineto prepares both language directions before enabling a translation-enabled start.
-8. Enable the post-meeting summary if desired and choose English or Vietnamese.
-9. Confirm that participants were informed and acknowledge the displayed capture boundary.
-10. Select **Start Meeting**.
+7. Choose the meeting scenario that matches the room (standup, client call, 1:1, and so on). Kineto still translates locally with Apple Translation, then rewrites the caption so Vietnamese (and English) match how people actually speak in that situation instead of a literal dictionary line.
+8. Wait for **Translation assets ready**. Kineto prepares both language directions before enabling a translation-enabled start.
+9. Enable the post-meeting summary if desired and choose English or Vietnamese.
+10. Confirm that participants were informed and acknowledge the displayed capture boundary.
+11. Select **Start Meeting**.
 After a successful **Start Meeting**, Kineto enters floating mode: it reversibly orders the identified main-window group out of view without closing it or stopping capture, while the linked floating caption/pet pair remains visible during active capture.
 
 Application capture may include every audible window from that application. Display capture may include all audio associated with that display. Kineto does not claim browser-tab isolation or meeting-platform participant identity.
@@ -111,7 +112,7 @@ Application capture may include every audible window from that application. Disp
 - Pet Mode receives only the non-content `FloatingCaptionPetState` enum. It cannot inspect, reveal, retain, log, or react to caption/transcript text, translations, audio, speaker identity, source application/window identity, or sentiment; it creates no independent work and, aside from dragging it to move the linked overlay, accepts neither focus nor content interaction. It shares the overlay's normal screenshot and screen-share visibility.
 - Pet Mode has at most one non-looping transform/opacity transition of 200 ms or less and remains static when Reduce Motion is enabled.
 - The capture and paused menu-bar status remains generic and content-free; it does not display caption text, source identity, or capture content. It keeps **Resume** available while paused and can reveal the existing live meeting window.
-- Finalized English and Vietnamese segments are translated locally when translation is enabled.
+- Finalized English and Vietnamese segments are translated locally when translation is enabled. The selected meeting scenario keeps the caption on-register: software standups keep PR, blocker, and ship-as-release; client calls stay polite; kinship words in Vietnamese are not translated as family titles.
 - A visible transcript gap means audio could not be safely processed; Kineto does not fabricate text across missing audio.
 - Use **Pause** to suspend capture; the main window returns and the floating pair hides. Use **Resume** in the live meeting window or menu bar to continue capture; **Resume** leaves the main window shown. While active capture is available, select **Use Floating Captions** in the live meeting window to explicitly hide the main window again and re-enter floating mode. This action exists only in that live meeting surface.
 - Use **Stop & Process** to finish capture, drain finalized transcription, seal the source meeting, and generate the optional summary. **Delete…** remains a separate confirmed action and does not share the floating overlay control.

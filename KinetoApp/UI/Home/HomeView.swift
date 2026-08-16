@@ -332,6 +332,15 @@ struct HomeView: View {
                             )
                             .font(.caption)
                             .foregroundStyle(model.translationReady ? Color.accentColor : Color.secondary)
+                            Picker("Meeting scenario", selection: $model.meetingScenario) {
+                                ForEach(MeetingScenario.allCases) { scenario in
+                                    Text(scenario.displayName).tag(scenario)
+                                }
+                            }
+                            Text(model.meetingScenario.detail)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                         Toggle("Generate a post-meeting summary", isOn: $model.summaryEnabled)
                         if model.summaryEnabled {
@@ -409,6 +418,12 @@ struct HomeView: View {
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
                     .accessibilityLabel("Speech engine \(model.activeASREngine == .appleSpeech ? "Apple Speech" : "Whisper")")
+                if model.translationEnabled {
+                    Text(model.meetingScenario.displayName)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel("Translation scenario \(model.meetingScenario.displayName)")
+                }
                 Label("Local", systemImage: "checkmark.shield")
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)

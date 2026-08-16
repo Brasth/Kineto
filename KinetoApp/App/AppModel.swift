@@ -159,6 +159,11 @@ final class AppModel {
     private(set) var asrEngineNotice: String?
     var includeMicrophone = true
     var translationEnabled = true
+    var meetingScenario: MeetingScenario = .general {
+        didSet {
+            UserDefaults.standard.set(meetingScenario.rawValue, forKey: "kineto.meetingScenario")
+        }
+    }
     var summaryEnabled = true
     var summaryLanguage: SpokenLanguage = .english
     var summaryTemplate: SummaryTemplate = .executiveBrief {
@@ -190,7 +195,9 @@ final class AppModel {
     let productName = KinetoCore.productName
 
     private let capture = MeetingCapture()
-    private let translationService = TranslationService()
+    private let translationService = TranslationService(
+        refiner: TranslationRefiner.foundationModels()
+    )
     private let summaryService = SummaryService()
     private let chatService = MeetingChatService()
     private let meetingStore: MeetingPackageStore
@@ -251,6 +258,11 @@ final class AppModel {
            let template = SummaryTemplate(rawValue: raw)
         {
             summaryTemplate = template
+        }
+        if let raw = UserDefaults.standard.string(forKey: "kineto.meetingScenario"),
+           let scenario = MeetingScenario(rawValue: raw)
+        {
+            meetingScenario = scenario
         }
         restorePetSettings()
         configureContentSharingPicker()
@@ -913,7 +925,11 @@ final class AppModel {
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
-                let translation = try await self.translationService.translate(segment, to: target)
+                let translation = try await self.translationService.translate(
+                    segment,
+                    to: target,
+                    context: self.makeTranslationContext(for: segment)
+                )
                 guard !Task.isCancelled else { return }
                 if !self.translations.contains(where: {
                     $0.sourceSegmentID == translation.sourceSegmentID &&
@@ -929,6 +945,25 @@ final class AppModel {
             self.translationTasks[segment.id] = nil
         }
         translationTasks[segment.id] = task
+    }
+
+    private func makeTranslationContext(for segment: Segment) -> TranslationContext {
+        let recent = segments
+            .filter { $0.isFinal && $0.id != segment.id }
+            .suffix(5)
+            .map { prior in
+                TranslationTurn(
+                    speaker: prior.speakerLabel,
+                    sourceLanguage: prior.language,
+                    sourceText: prior.text,
+                    translatedText: translations.first { $0.sourceSegmentID == prior.id }?.text
+                )
+            }
+        return TranslationContext(
+            scenario: meetingScenario,
+            speaker: segment.speakerLabel,
+            recentTurns: Array(recent)
+        )
     }
 
     private func ensureTranslationsForSource(_ source: AudioSource) async {
@@ -977,12 +1012,19 @@ final class AppModel {
 
         guard !pending.isEmpty else { return }
         processingStatus = "Translating \(pending.count) remaining segments…"
+        let jobs = pending.map { segment, target in
+            (segment, target, makeTranslationContext(for: segment))
+        }
         await withTaskGroup(of: Void.self) { group in
-            for (segment, target) in pending {
+            for (segment, target, context) in jobs {
                 group.addTask { [weak self] in
                     guard let self else { return }
                     do {
-                        let translation = try await self.translationService.translate(segment, to: target)
+                        let translation = try await self.translationService.translate(
+                            segment,
+                            to: target,
+                            context: context
+                        )
                         try await self.meetingStore.append(translation, meetingID: meetingID)
                         await MainActor.run {
                             if !self.translations.contains(where: {

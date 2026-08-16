@@ -9,8 +9,16 @@ public enum TranslationServiceError: Error, Equatable {
 
 public actor TranslationService {
     private var sessions: [String: TranslationSession] = [:]
+    private let postEditor: TranslationPostEditor
+    private let refiner: TranslationRefining?
 
-    public init() {}
+    public init(
+        postEditor: TranslationPostEditor = TranslationPostEditor(),
+        refiner: TranslationRefining? = nil
+    ) {
+        self.postEditor = postEditor
+        self.refiner = refiner
+    }
 
     public func availability(
         from source: SpokenLanguage,
@@ -22,7 +30,8 @@ public actor TranslationService {
 
     public func translate(
         _ segment: Segment,
-        to target: SpokenLanguage
+        to target: SpokenLanguage,
+        context: TranslationContext = .empty
     ) async throws -> TranslationRecord {
         guard segment.isFinal else { throw TranslationServiceError.sourceNotFinal }
         guard let pair = Self.pair(source: segment.language, target: target) else {
@@ -42,12 +51,58 @@ public actor TranslationService {
             session = created
         }
         let response = try await session.translate(segment.text)
+        let edited = postEditor.edit(
+            source: segment.text,
+            draft: response.targetText,
+            sourceLanguage: segment.language,
+            targetLanguage: target,
+            context: context
+        )
+        let refined: String
+        if let refiner {
+            let request = TranslationRefineRequest(
+                sourceText: segment.text,
+                draftText: edited,
+                sourceLanguage: segment.language,
+                targetLanguage: target,
+                context: context
+            )
+            refined = await refiner(request) ?? edited
+        } else {
+            refined = edited
+        }
         return TranslationRecord(
             sourceSegmentID: segment.id,
             sourceLanguage: segment.language,
             targetLanguage: target,
-            text: response.targetText
+            text: refined
         )
+    }
+
+    /// Test seam: apply the same post-edit / optional refine path without Apple Translation.
+    public func finalizeDraft(
+        source: String,
+        draft: String,
+        sourceLanguage: SpokenLanguage,
+        targetLanguage: SpokenLanguage,
+        context: TranslationContext
+    ) async -> String {
+        let edited = postEditor.edit(
+            source: source,
+            draft: draft,
+            sourceLanguage: sourceLanguage,
+            targetLanguage: targetLanguage,
+            context: context
+        )
+        guard let refiner else { return edited }
+        let request = TranslationRefineRequest(
+            sourceText: source,
+            draftText: edited,
+            sourceLanguage: sourceLanguage,
+            targetLanguage: targetLanguage,
+            context: context
+        )
+        return await refiner(request) ?? edited
     }
 
     public func cancel() {
