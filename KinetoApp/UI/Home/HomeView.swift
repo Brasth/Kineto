@@ -7,6 +7,7 @@ import AppKit
 enum ReviewPresentationPolicy {
     enum Workspace: Hashable {
         case transcript
+        case notes
         case summary
         case ask
     }
@@ -26,7 +27,7 @@ enum ReviewPresentationPolicy {
     }
 
     static func workspaceOptions(isCompact: Bool) -> [Workspace] {
-        isCompact ? [.transcript, .summary, .ask] : [.summary, .ask]
+        isCompact ? [.transcript, .notes, .summary, .ask] : [.notes, .summary, .ask]
     }
 
     static func displayedWorkspace(for selection: Workspace, isCompact: Bool) -> Workspace {
@@ -60,7 +61,8 @@ struct HomeView: View {
     )
     @State private var sidebarVisibility: NavigationSplitViewVisibility = .all
     @State private var usesCompactPresentation = false
-    @State private var reviewWorkspace: ReviewPresentationPolicy.Workspace = .summary
+    @State private var reviewWorkspace: ReviewPresentationPolicy.Workspace = .notes
+    @State private var liveWorkspace: ReviewPresentationPolicy.Workspace = .transcript
 
     var body: some View {
         GeometryReader { proxy in
@@ -188,6 +190,16 @@ struct HomeView: View {
                 provider: pending.provider,
                 onAllow: { model.confirmPendingChatEgress() },
                 onCancel: { model.cancelPendingChatEgress() }
+            )
+        }
+        .sheet(isPresented: Binding(
+            get: { model.pendingRecapEgress },
+            set: { if !$0 { model.cancelPendingRecapEgress() } }
+        )) {
+            ChatEgressConsentSheet(
+                provider: model.chatProvider,
+                onAllow: { model.confirmPendingRecapEgress() },
+                onCancel: { model.cancelPendingRecapEgress() }
             )
         }
         }
@@ -443,7 +455,18 @@ struct HomeView: View {
             .frame(height: 40)
             .background(.background)
             Divider()
-            if liveTimelineItems.isEmpty {
+            Picker("Live workspace", selection: $liveWorkspace) {
+                Text("Transcript").tag(ReviewPresentationPolicy.Workspace.transcript)
+                Text("Notes").tag(ReviewPresentationPolicy.Workspace.notes)
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 8)
+            .accessibilityLabel("Live workspace")
+            if liveWorkspace == .notes {
+                MeetingNotepadView(model: model, evidenceSelection: $evidenceSelection)
+                    .frame(maxHeight: .infinity)
+            } else if liveTimelineItems.isEmpty {
                 ContentUnavailableView(
                     "Listening locally",
                     systemImage: "waveform",
@@ -772,6 +795,8 @@ struct HomeView: View {
                     switch reviewWorkspace {
                     case .transcript, .summary:
                         summaryWorkspace
+                    case .notes:
+                        MeetingNotepadView(model: model, evidenceSelection: $evidenceSelection)
                     case .ask:
                         MeetingChatView(
                             model: model,
@@ -836,6 +861,8 @@ struct HomeView: View {
                     switch reviewWorkspace {
                     case .transcript:
                         transcriptWorkspace
+                    case .notes:
+                        MeetingNotepadView(model: model, evidenceSelection: $evidenceSelection)
                     case .summary:
                         summaryWorkspace
                     case .ask:
@@ -857,6 +884,8 @@ struct HomeView: View {
         switch workspace {
         case .transcript:
             Text("Original Transcript")
+        case .notes:
+            Text("Notes")
         case .summary:
             Text("Summary")
         case .ask:

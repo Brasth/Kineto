@@ -127,6 +127,14 @@ final class AppModel {
     private(set) var gaps: [TranscriptGap] = []
     private(set) var summary: SummaryRecord?
     private(set) var chatTurns: [ChatTurnRecord] = []
+    var scratchpadDraft = ""
+    private(set) var recap: MeetingRecapRecord?
+    private(set) var isEnhancingRecap = false
+    var pendingRecapEgress = false
+    private var scratchpadPersistTask: Task<Void, Never>?
+    private var recapTask: Task<Void, Never>?
+    private var isRestoringScratchpad = false
+    private var persistedScratchpadRevision = 0
     private(set) var isAnsweringChat = false
     var pendingChatEgress: PendingChatEgress?
     var chatProvider: ChatProviderID = .appleOnDevice {
@@ -532,6 +540,96 @@ final class AppModel {
         Task { await cancelChat() }
     }
 
+    var isRecapStale: Bool {
+        guard let recap else { return false }
+        return recap.scratchpadRevision != persistedScratchpadRevision
+    }
+
+    func scheduleScratchpadPersist() {
+        guard !isRestoringScratchpad, activeMeeting != nil else { return }
+        scratchpadPersistTask?.cancel()
+        scratchpadPersistTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(700))
+            guard let self, !Task.isCancelled else { return }
+            await self.persistScratchpadIfNeeded()
+        }
+    }
+
+    func enhanceRecap(egressConfirmed: Bool = false) {
+        guard let meeting = activeMeeting, meeting.state == .stopped, !isEnhancingRecap else { return }
+        if chatProvider.sendsMeetingExcerptsOffDevice,
+           !egressConfirmed,
+           ChatProviderPreferences.shouldRequestConsent(for: chatProvider) {
+            pendingRecapEgress = true
+            return
+        }
+        let meetingID = meeting.id
+        let language = summaryLanguage
+        isEnhancingRecap = true
+        recapTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                self.isEnhancingRecap = false
+                self.recapTask = nil
+            }
+            await self.persistScratchpadIfNeeded()
+            do {
+                let snapshot = try await self.meetingStore.snapshot(for: meetingID)
+                let generator = await self.makeChatGenerator(egressAllowed: true)
+                let service = MeetingRecapService(generator: generator)
+                guard let recap = await service.enhance(snapshot: snapshot, language: language) else {
+                    return
+                }
+                try await self.meetingStore.saveRecap(recap)
+                guard self.activeMeeting?.id == meetingID else { return }
+                self.recap = recap
+                await self.refreshMeetings()
+            } catch is CancellationError {
+                return
+            } catch {
+                self.errorMessage = "Enhanced notes could not be saved to the encrypted meeting."
+            }
+        }
+    }
+
+    func confirmPendingRecapEgress() {
+        guard pendingRecapEgress else { return }
+        ChatProviderPreferences.setConsented(true, to: chatProvider)
+        pendingRecapEgress = false
+        enhanceRecap(egressConfirmed: true)
+    }
+
+    func cancelPendingRecapEgress() {
+        pendingRecapEgress = false
+    }
+
+    private func applyScratchpad(_ scratchpad: MeetingScratchpad, recap: MeetingRecapRecord?) {
+        isRestoringScratchpad = true
+        scratchpadDraft = scratchpad.body
+        persistedScratchpadRevision = scratchpad.revision
+        self.recap = recap
+        isRestoringScratchpad = false
+    }
+
+    private func persistScratchpadIfNeeded() async {
+        scratchpadPersistTask?.cancel()
+        scratchpadPersistTask = nil
+        guard let meeting = activeMeeting else { return }
+        let body = scratchpadDraft
+        do {
+            try await meetingStore.saveScratchpad(
+                MeetingScratchpad(body: body, updatedAt: Date()),
+                for: meeting.id
+            )
+            if let snapshot = try? await meetingStore.snapshot(for: meeting.id) {
+                persistedScratchpadRevision = snapshot.scratchpad.revision
+                recap = snapshot.recap
+            }
+        } catch {
+            // Notes stay in the editor; the next pause/stop retries persist.
+        }
+    }
+
     private func cancelChat() async {
         let task = chatTask
         chatTask = nil
@@ -756,6 +854,7 @@ final class AppModel {
             translations = snapshot.translations
             gaps = snapshot.gaps.filter { active.contains($0.source.active) }
             chatTurns = snapshot.chatTurns
+            applyScratchpad(snapshot.scratchpad, recap: snapshot.recap)
             screen = .summary
             await refreshMeetings()
         } catch {
@@ -772,6 +871,7 @@ final class AppModel {
 
     func newMeeting() async {
         await cancelChat()
+        await persistScratchpadIfNeeded()
         resetMeetingView()
         screen = .preflight
     }
@@ -974,6 +1074,7 @@ final class AppModel {
                     signalGatePhase = .capturing
                     throw error
                 }
+                await persistScratchpadIfNeeded()
                 do {
                     try await meetingStore.updateState(.paused, for: meeting.id)
                     isPaused = true
@@ -1005,6 +1106,7 @@ final class AppModel {
         isBusy = true
         canRetryFinalization = false
         processingStatus = "Draining and sealing the source transcript…"
+        await persistScratchpadIfNeeded()
         var captureStopped = false
         do {
             // Source loss may already have finished capture; still drain transcript work.
@@ -1409,7 +1511,10 @@ final class AppModel {
         chatTask = nil
         chatRequestID = nil
         chatTurns = []
+        applyScratchpad(.empty, recap: nil)
         isAnsweringChat = false
+        isEnhancingRecap = false
+        pendingRecapEgress = false
         recoveryNotice = nil
         isPaused = false
         signalGatePhase = .hidden

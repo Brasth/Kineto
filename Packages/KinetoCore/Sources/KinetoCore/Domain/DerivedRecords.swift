@@ -313,3 +313,76 @@ public struct SummaryRecord: Codable, Equatable, Sendable {
         try container.encodeIfPresent(provider, forKey: .provider)
     }
 }
+
+public struct MeetingScratchpad: Codable, Equatable, Sendable {
+    public static let maximumBodyCharacters = 20_000
+    public static let empty = MeetingScratchpad(
+        body: "",
+        updatedAt: Date(timeIntervalSince1970: 0),
+        revision: 0
+    )
+
+    public var body: String
+    public var updatedAt: Date
+    public var revision: Int
+
+    public var paragraphs: [String] {
+        body
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .components(separatedBy: "\n\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    public init(body: String, updatedAt: Date = Date(), revision: Int = 0) {
+        self.body = String(body.prefix(Self.maximumBodyCharacters))
+        self.updatedAt = updatedAt
+        self.revision = revision
+    }
+}
+
+public enum RecapBlockKind: String, Codable, Equatable, Sendable {
+    case user
+    case filled
+}
+
+public struct RecapBlock: Codable, Equatable, Identifiable, Sendable {
+    public let id: UUID
+    public let kind: RecapBlockKind
+    public let text: String
+    public let evidence: [EvidenceReference]
+
+    public init(
+        id: UUID = UUID(),
+        kind: RecapBlockKind,
+        text: String,
+        evidence: [EvidenceReference] = []
+    ) {
+        self.id = id
+        self.kind = kind
+        self.text = text
+        self.evidence = evidence
+    }
+}
+
+public struct MeetingRecapRecord: Codable, Equatable, Sendable {
+    public let meetingID: UUID
+    public let language: SpokenLanguage
+    public let scratchpadRevision: Int
+    public let blocks: [RecapBlock]
+    public let provider: ChatProviderID?
+
+    public init(
+        meetingID: UUID,
+        language: SpokenLanguage,
+        scratchpadRevision: Int,
+        blocks: [RecapBlock],
+        provider: ChatProviderID? = nil
+    ) {
+        self.meetingID = meetingID
+        self.language = language
+        self.scratchpadRevision = scratchpadRevision
+        self.blocks = blocks
+        self.provider = provider
+    }
+}

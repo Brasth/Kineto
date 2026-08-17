@@ -34,6 +34,7 @@ Generated SwiftPM state under `Packages/KinetoCore/.build/` and `.swiftpm/` is n
 | `KinetoApp/UI/Chat/` | `MeetingChatView`, `MeetingChatComposer`, `ChatTurnView`, `ChatProviderSettingsView`; Ask conversation extracted from HomeView |
 | `KinetoApp/Chat/` | `ChatEgressServiceProtocol`, `ChatEgressXPCClient`; main-app side of isolated chat egress |
 | `KinetoChatEgressService/` | Sandboxed XPC helper with `network.client`; official Grok / OpenAI / Gemini HTTP only |
+| `KinetoApp/UI/Notes/` | `MeetingNotepadView`, `MeetingRecapView`; live handwritten notes plus post-stop transcript fills |
 | `KinetoApp/UI/Home/HomeView.swift` | `HomeView`, `TranscriptRow`, `EvidenceSheet`; navigation and home/preflight/live/processing/summary/privacy screens |
 | `KinetoApp/Kineto.entitlements` | App Sandbox, audio input, user-selected read/write; no network client entitlement |
 
@@ -48,7 +49,7 @@ Generated SwiftPM state under `Packages/KinetoCore/.build/` and `.swiftpm/` is n
 | `Domain/Meeting.swift` | `MeetingState`, `Meeting`; ready/recording/paused/stopped lifecycle and `retainsAudio` policy |
 | `Domain/Segment.swift` | `SpokenLanguage`, `AudioSource`, `Segment`; timestamped transcript source record with `isFinal` |
 | `Domain/TranscriptGap.swift` | `TranscriptGap`; durable record of an unavailable interval |
-| `Domain/DerivedRecords.swift` | `TranslationRecord`, `EvidenceReference`, `SummaryItem`, `SummaryRecord`; records derived from source segments |
+| `Domain/DerivedRecords.swift` | `TranslationRecord`, `EvidenceReference`, `SummaryItem`, `SummaryRecord`, `ChatTurnRecord`, `MeetingScratchpad`, `RecapBlock`, `MeetingRecapRecord`; records derived from source segments plus operator notes |
 
 **Record authority:** finalized `Segment` values and `TranscriptGap` values form the source ledger. `TranslationRecord` references an existing `Segment.id`; `SummaryItem.evidence` references source segment UUIDs and supporting text. Translations and summaries are derived collections and never replace or mutate finalized `Segment.text`.
 
@@ -87,7 +88,10 @@ Screen/system audio is configured at 48 kHz stereo and normalized before ASR. Ki
 | `Translation/TranslationRefiner.swift` | Optional on-device Foundation Models rewrite; no-ops when unavailable |
 | `Translation/TranslationService.swift` | `TranslationService`; actor-owned installed-language sessions, post-edit, optional refine, finalized-only English↔Vietnamese records |
 | `Summary/SummaryService.swift` | `SummaryService`; stopped-meeting-only Foundation Models generation, 6,000-character chunks, maximum 24 accepted items |
-| `Summary/EvidenceValidator.swift` | `EvidenceValidator`; rejects missing/unknown evidence and non-extractive text |
+| `Summary/MeetingRecapService.swift` | `MeetingRecapService`; notes-first enhance, interleaved grounded fills, never rewrites operator text |
+| `Summary/MeetingRecapPayloadParser.swift` | JSON `fills` plus `<<FILL after=N>>` markers |
+| `Chat/ChatOAuth.swift` | Official Gemini PKCE types, credential envelope, Google auth/token endpoints |
+| `Chat/ChatProviderAccountStore.swift` | Device-only Keychain for API keys and OAuth secrets; legacy raw keys still decode |
 | `Chat/MeetingLexicalRetriever.swift` | `MeetingLexicalRetriever`; deterministic in-memory final-segment retrieval with gap boundaries |
 | `Chat/MeetingChatService.swift` | `MeetingChatService`; fresh tool-free local Foundation Models question answering, strict source citations, and truthful no-answer outcomes |
 
@@ -101,9 +105,9 @@ SwiftUI `translationTask` sessions remain scoped to their task closures and prep
 | `Storage/MeetingKeyStore.swift` | `MeetingKeyStore`, `KeychainMeetingKeyStore`; per-meeting encryption keys in non-synchronizing, this-device-only Keychain items |
 | `Storage/AsyncMutex.swift` | `AsyncMutex`; serializes reentrant async read-modify-write transactions |
 
-A snapshot contains `meeting`, finalized `segments`, interval-aware `gaps`, derived `translations`, an optional derived `summary`, and append-only derived `chatTurns`. Each snapshot commit encrypts `manifest.knt` and `text.knt` with AES-GCM, authenticates meeting/generation/file context, fsyncs the generation and replaceable `current` pointer, then publishes the authoritative generation in non-synchronizing Keychain metadata as the final commit step. Deletion tombstones the package, removes Keychain authority first, then removes package contents; startup recovery completes interrupted deletion without opening encrypted meeting payloads.
+A snapshot contains `meeting`, finalized `segments`, interval-aware `gaps`, derived `translations`, an optional derived `summary`, append-only derived `chatTurns`, operator `scratchpad`, and an optional derived `recap`. Each snapshot commit encrypts `manifest.knt` and `text.knt` with AES-GCM (manifest version 4), authenticates meeting/generation/file context, fsyncs the generation and replaceable `current` pointer, then publishes the authoritative generation in non-synchronizing Keychain metadata as the final commit step. Deletion tombstones the package, removes Keychain authority first, then removes package contents; startup recovery completes interrupted deletion without opening encrypted meeting payloads.
 
-Plaintext JSON transcript export includes `chatTurns`. Export remains intentionally outside the encrypted package and subsequent Kineto deletion boundary; `AppModel` warns the user in the save panel.
+Plaintext JSON transcript export includes `chatTurns`, `scratchpad`, and `recap`. Export remains intentionally outside the encrypted package and subsequent Kineto deletion boundary; `AppModel` warns the user in the save panel.
 
 ### Model Delivery
 
@@ -127,6 +131,7 @@ The pinned model is `ggml-large-v3-turbo-q5_0.bin` at whisper.cpp model revision
 | `WhisperRecognizerTests.swift` | Silence and brief-noise rejection plus sustained-audio admission |
 | `EvidenceValidatorTests.swift` | Evidence ID and extractive-support rejection |
 | `MeetingPackageStoreTests.swift` | Encrypted storage, state/record invariants, terminal source/translation rejection, reopen/export/delete behavior |
+| `MeetingRecapServiceTests.swift` | Verbatim operator paragraphs, interleaved `afterParagraph` fills, clamp past end, prompt contract |
 | `TranslationPostEditorTests.swift` | Scenario glossary, phrase repair, kinship address, and optional refine seam |
 | `KinetoTests/FloatingCaptionPetVisualPreferencesTests.swift` | Five built-in themes, distinct sprites, versioned settings restore/per-field fallback, opaque canonical sRGB accent normalization, and accessibility motion behavior |
 

@@ -452,7 +452,7 @@ private func sealForPackage<T: Encodable>(
             authenticating: packageAAD(meetingID: meeting.id, generation: generation, file: "manifest")
         )
     )
-    #expect(manifest.version == 3)
+    #expect(manifest.version == 4)
     #expect(manifest.chatTurnIDs == [turn.id, noAnswerTurn.id])
 
     let exportURL = root.appending(path: "chat.json")
@@ -549,7 +549,7 @@ private func sealForPackage<T: Encodable>(
             authenticating: packageAAD(meetingID: meeting.id, generation: upgradedGeneration, file: "manifest")
         )
     )
-    #expect(upgradedManifest.version == 3)
+    #expect(upgradedManifest.version == 4)
     #expect(try await store.snapshot(for: meeting.id).chatTurns == [turn])
 }
 

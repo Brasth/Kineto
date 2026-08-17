@@ -6,7 +6,8 @@ enum ChatEgressHTTPCodec {
     static let allowedHosts: Set<String> = [
         "api.x.ai",
         "api.openai.com",
-        "generativelanguage.googleapis.com"
+        "generativelanguage.googleapis.com",
+        "oauth2.googleapis.com"
     ]
     static let maximumPromptCharacters = 48_000
     static let maximumResponseBytes = 1_048_576
@@ -38,7 +39,8 @@ enum ChatEgressHTTPCodec {
         provider: String,
         model: String,
         prompt: String,
-        apiKey: String
+        apiKey: String,
+        authKind: String = "apiKey"
     ) throws -> URLRequest {
         try validatePrompt(prompt)
         let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -63,11 +65,71 @@ enum ChatEgressHTTPCodec {
             return try geminiRequest(
                 model: model.isEmpty ? "gemini-2.5-flash" : model,
                 prompt: prompt,
-                apiKey: trimmedKey
+                credential: trimmedKey,
+                useBearer: authKind == "oauth"
             )
         default:
             throw CodecError.unsupportedProvider
         }
+    }
+
+    static func makeTokenRequest(
+        provider: String,
+        clientID: String,
+        clientSecret: String,
+        grantType: String,
+        code: String,
+        redirectURI: String,
+        codeVerifier: String,
+        refreshToken: String
+    ) throws -> URLRequest {
+        guard provider == "gemini" else { throw CodecError.unsupportedProvider }
+        let trimmedClient = clientID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedClient.isEmpty else { throw CodecError.unauthorized }
+
+        var items: [URLQueryItem]
+        switch grantType {
+        case "refresh_token":
+            let token = refreshToken.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !token.isEmpty else { throw CodecError.unauthorized }
+            items = [
+                URLQueryItem(name: "grant_type", value: "refresh_token"),
+                URLQueryItem(name: "refresh_token", value: token),
+                URLQueryItem(name: "client_id", value: trimmedClient)
+            ]
+        case "authorization_code":
+            let trimmedCode = code.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmedRedirect = redirectURI.trimmingCharacters(in: .whitespacesAndNewlines)
+            let verifier = codeVerifier.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedCode.isEmpty, !trimmedRedirect.isEmpty, !verifier.isEmpty else {
+                throw CodecError.emptyPrompt
+            }
+            items = [
+                URLQueryItem(name: "grant_type", value: "authorization_code"),
+                URLQueryItem(name: "code", value: trimmedCode),
+                URLQueryItem(name: "redirect_uri", value: trimmedRedirect),
+                URLQueryItem(name: "client_id", value: trimmedClient),
+                URLQueryItem(name: "code_verifier", value: verifier)
+            ]
+        default:
+            throw CodecError.unsupportedProvider
+        }
+        let secret = clientSecret.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !secret.isEmpty {
+            items.append(URLQueryItem(name: "client_secret", value: secret))
+        }
+        var request = URLRequest(url: URL(string: "https://oauth2.googleapis.com/token")!)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 30
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        let allowed = CharacterSet.urlQueryAllowed.subtracting(CharacterSet(charactersIn: "+&="))
+        request.httpBody = Data(items.compactMap { item -> String? in
+            guard let value = item.value else { return nil }
+            let name = item.name.addingPercentEncoding(withAllowedCharacters: allowed) ?? item.name
+            let escaped = value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
+            return "\(name)=\(escaped)"
+        }.joined(separator: "&").utf8)
+        return request
     }
 
     static func parseResponse(provider: String, data: Data, statusCode: Int) throws -> String {
@@ -128,17 +190,23 @@ enum ChatEgressHTTPCodec {
     private static func geminiRequest(
         model: String,
         prompt: String,
-        apiKey: String
+        credential: String,
+        useBearer: Bool
     ) throws -> URLRequest {
         var components = URLComponents(
             string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent"
         )
-        components?.queryItems = [URLQueryItem(name: "key", value: apiKey)]
+        if !useBearer {
+            components?.queryItems = [URLQueryItem(name: "key", value: credential)]
+        }
         guard let url = components?.url else { throw CodecError.unsupportedProvider }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.timeoutInterval = 60
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if useBearer {
+            request.setValue("Bearer \(credential)", forHTTPHeaderField: "Authorization")
+        }
         let body: [String: Any] = [
             "system_instruction": [
                 "parts": [["text": groundedInstructions]]

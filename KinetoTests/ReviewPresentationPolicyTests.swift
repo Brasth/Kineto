@@ -20,8 +20,8 @@ final class ReviewPresentationPolicyTests: XCTestCase {
 
     func testWorkspaceOptionsMatchPresentationMode() {
         let expectations: [(isCompact: Bool, options: [ReviewPresentationPolicy.Workspace])] = [
-            (isCompact: false, options: [.summary, .ask]),
-            (isCompact: true, options: [.transcript, .summary, .ask]),
+            (isCompact: false, options: [.notes, .summary, .ask]),
+            (isCompact: true, options: [.transcript, .notes, .summary, .ask]),
         ]
 
         for expectation in expectations {
