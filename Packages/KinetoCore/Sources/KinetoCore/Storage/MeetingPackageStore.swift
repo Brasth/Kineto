@@ -19,6 +19,8 @@ public struct MeetingSnapshot: Codable, Equatable, Sendable {
     public var translations: [TranslationRecord]
     public var summary: SummaryRecord?
     public var chatTurns: [ChatTurnRecord]
+    public var scratchpad: MeetingScratchpad
+    public var recap: MeetingRecapRecord?
 
     public init(
         meeting: Meeting,
@@ -26,7 +28,9 @@ public struct MeetingSnapshot: Codable, Equatable, Sendable {
         gaps: [TranscriptGap] = [],
         translations: [TranslationRecord] = [],
         summary: SummaryRecord? = nil,
-        chatTurns: [ChatTurnRecord] = []
+        chatTurns: [ChatTurnRecord] = [],
+        scratchpad: MeetingScratchpad = .empty,
+        recap: MeetingRecapRecord? = nil
     ) {
         self.meeting = meeting
         self.segments = segments
@@ -34,6 +38,8 @@ public struct MeetingSnapshot: Codable, Equatable, Sendable {
         self.translations = translations
         self.summary = summary
         self.chatTurns = chatTurns
+        self.scratchpad = scratchpad
+        self.recap = recap
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -43,6 +49,8 @@ public struct MeetingSnapshot: Codable, Equatable, Sendable {
         case translations
         case summary
         case chatTurns
+        case scratchpad
+        case recap
     }
 
     public init(from decoder: any Decoder) throws {
@@ -53,6 +61,8 @@ public struct MeetingSnapshot: Codable, Equatable, Sendable {
         translations = try values.decode([TranslationRecord].self, forKey: .translations)
         summary = try values.decodeIfPresent(SummaryRecord.self, forKey: .summary)
         chatTurns = try values.decodeIfPresent([ChatTurnRecord].self, forKey: .chatTurns) ?? []
+        scratchpad = try values.decodeIfPresent(MeetingScratchpad.self, forKey: .scratchpad) ?? .empty
+        recap = try values.decodeIfPresent(MeetingRecapRecord.self, forKey: .recap)
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -63,6 +73,8 @@ public struct MeetingSnapshot: Codable, Equatable, Sendable {
         try values.encode(translations, forKey: .translations)
         try values.encodeIfPresent(summary, forKey: .summary)
         try values.encode(chatTurns, forKey: .chatTurns)
+        try values.encode(scratchpad, forKey: .scratchpad)
+        try values.encodeIfPresent(recap, forKey: .recap)
     }
 }
 
@@ -78,6 +90,9 @@ public actor MeetingPackageStore {
         let chatTurnIDs: [UUID]
         let hasSummary: Bool
         let retainsAudio: Bool
+        let scratchpadRevision: Int
+        let hasRecap: Bool
+        let recapBlockIDs: [UUID]
 
         private enum CodingKeys: String, CodingKey {
             case version
@@ -89,6 +104,9 @@ public actor MeetingPackageStore {
             case chatTurnIDs
             case hasSummary
             case retainsAudio
+            case scratchpadRevision
+            case hasRecap
+            case recapBlockIDs
         }
 
         init(
@@ -100,7 +118,10 @@ public actor MeetingPackageStore {
             translationIDs: [UUID],
             chatTurnIDs: [UUID],
             hasSummary: Bool,
-            retainsAudio: Bool
+            retainsAudio: Bool,
+            scratchpadRevision: Int,
+            hasRecap: Bool,
+            recapBlockIDs: [UUID]
         ) {
             self.version = version
             self.generation = generation
@@ -111,6 +132,9 @@ public actor MeetingPackageStore {
             self.chatTurnIDs = chatTurnIDs
             self.hasSummary = hasSummary
             self.retainsAudio = retainsAudio
+            self.scratchpadRevision = scratchpadRevision
+            self.hasRecap = hasRecap
+            self.recapBlockIDs = recapBlockIDs
         }
 
         init(from decoder: any Decoder) throws {
@@ -126,6 +150,9 @@ public actor MeetingPackageStore {
                 : try values.decode([UUID].self, forKey: .chatTurnIDs)
             hasSummary = try values.decode(Bool.self, forKey: .hasSummary)
             retainsAudio = try values.decode(Bool.self, forKey: .retainsAudio)
+            scratchpadRevision = try values.decodeIfPresent(Int.self, forKey: .scratchpadRevision) ?? 0
+            hasRecap = try values.decodeIfPresent(Bool.self, forKey: .hasRecap) ?? false
+            recapBlockIDs = try values.decodeIfPresent([UUID].self, forKey: .recapBlockIDs) ?? []
         }
     }
 
@@ -136,6 +163,8 @@ public actor MeetingPackageStore {
         let translations: [TranslationRecord]
         let summary: SummaryRecord?
         let chatTurns: [ChatTurnRecord]
+        let scratchpad: MeetingScratchpad
+        let recap: MeetingRecapRecord?
 
         init(_ snapshot: MeetingSnapshot) {
             meeting = snapshot.meeting
@@ -144,6 +173,8 @@ public actor MeetingPackageStore {
             translations = snapshot.translations
             summary = snapshot.summary
             chatTurns = snapshot.chatTurns
+            scratchpad = snapshot.scratchpad
+            recap = snapshot.recap
         }
     }
 
@@ -278,6 +309,18 @@ public actor MeetingPackageStore {
         }
     }
 
+    public func saveScratchpad(_ scratchpad: MeetingScratchpad, for meetingID: UUID) async throws {
+        try await mutationMutex.withLock {
+            try await self.saveScratchpadUnlocked(scratchpad, for: meetingID)
+        }
+    }
+
+    public func saveRecap(_ recap: MeetingRecapRecord) async throws {
+        try await mutationMutex.withLock {
+            try await self.saveRecapUnlocked(recap)
+        }
+    }
+
 
     private func updateStateUnlocked(_ state: MeetingState, for meetingID: UUID) async throws {
         try ensureNotDeleting(meetingID)
@@ -372,6 +415,40 @@ public actor MeetingPackageStore {
             throw MeetingStoreError.invalidState
         }
         value.summary = summary
+        try await commit(value)
+    }
+
+    private func saveScratchpadUnlocked(_ scratchpad: MeetingScratchpad, for meetingID: UUID) async throws {
+        try ensureNotDeleting(meetingID)
+        var value = try await snapshot(for: meetingID)
+        guard value.meeting.id == meetingID else {
+            throw MeetingStoreError.corrupted
+        }
+        if value.scratchpad.body == scratchpad.body {
+            return
+        }
+        value.scratchpad = MeetingScratchpad(
+            body: scratchpad.body,
+            updatedAt: scratchpad.updatedAt,
+            revision: value.scratchpad.revision + 1
+        )
+        try await commit(value)
+    }
+
+    private func saveRecapUnlocked(_ recap: MeetingRecapRecord) async throws {
+        try ensureNotDeleting(recap.meetingID)
+        var value = try await snapshot(for: recap.meetingID)
+        guard value.meeting.state == .stopped,
+              recap.meetingID == value.meeting.id,
+              !recap.blocks.isEmpty else {
+            throw MeetingStoreError.invalidState
+        }
+        for block in recap.blocks where block.kind == .filled {
+            guard !block.evidence.isEmpty else {
+                throw MeetingStoreError.corrupted
+            }
+        }
+        value.recap = recap
         try await commit(value)
     }
 
@@ -495,7 +572,7 @@ public actor MeetingPackageStore {
         let generationURL = packageURL.appending(path: generation.uuidString)
         let key = try await keys.key(for: meetingID, purpose: .text)
         let manifest = Manifest(
-            version: 3,
+            version: 4,
             generation: generation,
             meetingID: meetingID,
             segmentIDs: snapshot.segments.map(\.id),
@@ -503,7 +580,10 @@ public actor MeetingPackageStore {
             translationIDs: snapshot.translations.map(\.id),
             chatTurnIDs: snapshot.chatTurns.map(\.id),
             hasSummary: snapshot.summary != nil,
-            retainsAudio: snapshot.meeting.retainsAudio
+            retainsAudio: snapshot.meeting.retainsAudio,
+            scratchpadRevision: snapshot.scratchpad.revision,
+            hasRecap: snapshot.recap != nil,
+            recapBlockIDs: snapshot.recap?.blocks.map(\.id) ?? []
         )
 
         do {
@@ -534,7 +614,7 @@ public actor MeetingPackageStore {
         meetingID: UUID,
         generation: UUID
     ) throws {
-        guard (1...3).contains(manifest.version),
+        guard (1...4).contains(manifest.version),
               manifest.generation == generation,
               manifest.meetingID == meetingID,
               snapshot.meeting.id == meetingID,
@@ -553,6 +633,14 @@ public actor MeetingPackageStore {
                   manifest.segmentIDs.contains(translation.sourceSegmentID)
               }) else {
             throw MeetingStoreError.corrupted
+        }
+        if manifest.version >= 4 {
+            guard manifest.scratchpadRevision == snapshot.scratchpad.revision,
+                  manifest.hasRecap == (snapshot.recap != nil),
+                  manifest.recapBlockIDs == (snapshot.recap?.blocks.map(\.id) ?? []),
+                  Set(manifest.recapBlockIDs).count == manifest.recapBlockIDs.count else {
+                throw MeetingStoreError.corrupted
+            }
         }
         for chatTurn in snapshot.chatTurns {
             try validate(chatTurn: chatTurn, in: snapshot)

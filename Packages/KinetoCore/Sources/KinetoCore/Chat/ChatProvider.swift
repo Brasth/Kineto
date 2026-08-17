@@ -28,7 +28,7 @@ public enum ChatProviderID: String, Codable, CaseIterable, Sendable, Identifiabl
         case .openai:
             "OpenAI GPT via your own API key. Retrieved excerpts leave this Mac."
         case .gemini:
-            "Google Gemini via your own API key. Retrieved excerpts leave this Mac."
+            "Google Gemini via official OAuth or your own API key. Retrieved excerpts leave this Mac."
         }
     }
 
@@ -38,6 +38,10 @@ public enum ChatProviderID: String, Codable, CaseIterable, Sendable, Identifiabl
 
     public var keychainAccount: String {
         "chat-provider.\(rawValue)"
+    }
+
+    public var oauthClientAccount: String {
+        "chat-provider.\(rawValue).oauth-client"
     }
 
     public var consoleURL: URL {

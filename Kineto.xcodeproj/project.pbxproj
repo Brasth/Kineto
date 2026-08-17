@@ -65,6 +65,8 @@
 		300000000000000000000044 /* EvidenceSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000026 /* EvidenceSelection.swift */; };
 		300000000000000000000045 /* ChatEgressHTTPCodec.swift in Sources (Tests) */ = {isa = PBXBuildFile; fileRef = 300000000000000000000012 /* ChatEgressHTTPCodec.swift */; };
 		300000000000000000000046 /* ChatEgressHTTPCodecTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000015 /* ChatEgressHTTPCodecTests.swift */; };
+		300000000000000000000047 /* MeetingNotepadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000027 /* MeetingNotepadView.swift */; };
+		300000000000000000000048 /* MeetingRecapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000028 /* MeetingRecapView.swift */; };
 		/* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -128,6 +130,8 @@
 		300000000000000000000024 /* ChatEgressConsentSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatEgressConsentSheet.swift; sourceTree = "<group>"; };
 		300000000000000000000025 /* ChatOAuthScaffold.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatOAuthScaffold.swift; sourceTree = "<group>"; };
 		300000000000000000000026 /* EvidenceSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EvidenceSelection.swift; sourceTree = "<group>"; };
+		300000000000000000000027 /* MeetingNotepadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingNotepadView.swift; sourceTree = "<group>"; };
+		300000000000000000000028 /* MeetingRecapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingRecapView.swift; sourceTree = "<group>"; };
 		/* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -206,6 +210,7 @@
 				200000000000000000000040 /* PetCatalog */,
 				300000000000000000000080 /* Chat */,
 				300000000000000000000081 /* UIChat */,
+				300000000000000000000082 /* UINotes */,
 			);
 			path = KinetoApp;
 			sourceTree = "<group>";
@@ -294,6 +299,16 @@
 			);
 			name = Chat;
 			path = UI/Chat;
+			sourceTree = "<group>";
+		};
+		300000000000000000000082 /* UINotes */ = {
+			isa = PBXGroup;
+			children = (
+				300000000000000000000027 /* MeetingNotepadView.swift */,
+				300000000000000000000028 /* MeetingRecapView.swift */,
+			);
+			name = Notes;
+			path = UI/Notes;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -495,6 +510,8 @@
 				300000000000000000000042 /* ChatEgressConsentSheet.swift in Sources */,
 				300000000000000000000043 /* ChatOAuthScaffold.swift in Sources */,
 				300000000000000000000044 /* EvidenceSelection.swift in Sources */,
+				300000000000000000000047 /* MeetingNotepadView.swift in Sources */,
+				300000000000000000000048 /* MeetingRecapView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
