@@ -1,72 +1,47 @@
 import Foundation
-import FoundationModels
 
-@Generable
-private struct GeneratedChatCitation {
-    @Guide(description: "UUID of a supplied transcript segment")
-    var segmentID: String
-
-    @Guide(description: "Exact contiguous text copied from that supplied excerpt")
-    var quote: String
-}
-
-@Generable
-private struct GeneratedChatPayload {
-    @Guide(description: "A concise answer grounded only in the supplied transcript excerpts")
-    var answer: String
-
-    @Guide(description: "One or more exact supporting quotes from supplied transcript excerpts")
-    var citations: [GeneratedChatCitation]
-}
-
-struct MeetingChatGeneration: Sendable, Equatable {
-    let answer: String
-    let citations: [EvidenceReference]
-
-    init(answer: String, citations: [EvidenceReference]) {
-        self.answer = answer
-        self.citations = citations
-    }
-}
-
-enum MeetingChatModelCapability: Sendable, Equatable {
-    case available
-    case unavailable
-    case unsupportedLocale
-}
-
-typealias MeetingChatGenerator = @Sendable (String) async throws -> MeetingChatGeneration
-typealias MeetingChatCapability = @Sendable (SpokenLanguage) -> MeetingChatModelCapability
-
-/// Produces one grounded, standalone answer for a completed meeting snapshot.
-/// Every request gets a fresh, tool-free Foundation Models session; no prior turns
-/// or derived meeting data are included in its prompt.
+/// Produces one grounded answer for a completed meeting snapshot.
+/// Retrieval and citation validation stay local. The generator is injected.
 public actor MeetingChatService {
     private let retriever: MeetingLexicalRetriever
     private let validator: EvidenceValidator
-    private let capability: MeetingChatCapability
-    private let generator: MeetingChatGenerator
+    private let generator: any MeetingChatGenerating
+    public let includePriorTurns: Bool
 
     public init(
-        model: SystemLanguageModel = .default,
-        validator: EvidenceValidator = EvidenceValidator()
+        generator: any MeetingChatGenerating = MeetingChatGeneratorFactory.appleOnDeviceIfAvailable(),
+        validator: EvidenceValidator = EvidenceValidator(),
+        includePriorTurns: Bool = true
     ) {
         self.retriever = MeetingLexicalRetriever()
         self.validator = validator
-        self.capability = Self.capability(for: model)
-        self.generator = Self.generator(for: model)
+        self.generator = generator
+        self.includePriorTurns = includePriorTurns
     }
 
     init(
         retriever: MeetingLexicalRetriever = MeetingLexicalRetriever(),
         validator: EvidenceValidator = EvidenceValidator(),
-        capability: @escaping MeetingChatCapability,
-        generator: @escaping MeetingChatGenerator
+        generator: any MeetingChatGenerating,
+        includePriorTurns: Bool = false
     ) {
         self.retriever = retriever
         self.validator = validator
-        self.capability = capability
         self.generator = generator
+        self.includePriorTurns = includePriorTurns
+    }
+
+    /// Test seam matching the previous closure-based initializer.
+    init(
+        retriever: MeetingLexicalRetriever = MeetingLexicalRetriever(),
+        validator: EvidenceValidator = EvidenceValidator(),
+        capability: @escaping @Sendable (SpokenLanguage) -> MeetingChatModelCapability,
+        generator: @escaping @Sendable (String) async throws -> MeetingChatGeneration
+    ) {
+        self.retriever = retriever
+        self.validator = validator
+        self.generator = ClosureChatGenerator(capability: capability, generate: generator)
+        self.includePriorTurns = false
     }
 
     public func answer(
@@ -86,7 +61,7 @@ public actor MeetingChatService {
             )
         }
 
-        switch capability(language) {
+        switch generator.capability(for: language) {
         case .unavailable:
             return noAnswer(
                 question: normalizedQuestion,
@@ -103,12 +78,42 @@ public actor MeetingChatService {
                 reason: .unsupportedLocale,
                 context: context
             )
+        case .providerDisconnected:
+            return noAnswer(
+                question: normalizedQuestion,
+                meetingID: snapshot.meeting.id,
+                language: language,
+                reason: .providerDisconnected,
+                context: context
+            )
+        case .userDeniedEgress:
+            return noAnswer(
+                question: normalizedQuestion,
+                meetingID: snapshot.meeting.id,
+                language: language,
+                reason: .userDeniedEgress,
+                context: context
+            )
         case .available:
             break
         }
 
+        let prior = includePriorTurns
+            ? snapshot.chatTurns.filter { $0.outcome == .grounded }.suffix(6).map { $0 }
+            : []
+
         do {
-            let generated = try await generator(Self.prompt(question: normalizedQuestion, context: context))
+            let generated = try await generator.generate(
+                MeetingChatRequest(
+                    prompt: Self.prompt(
+                        question: normalizedQuestion,
+                        context: context,
+                        priorTurns: prior
+                    ),
+                    language: language,
+                    priorTurns: prior
+                )
+            )
             let answer = generated.answer.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !answer.isEmpty else {
                 return noAnswer(
@@ -147,7 +152,32 @@ public actor MeetingChatService {
                 question: normalizedQuestion,
                 answer: answer,
                 outcome: .grounded,
-                citations: citations
+                citations: citations,
+                provider: generator.provider
+            )
+        } catch ChatGenerationError.disconnected {
+            return noAnswer(
+                question: normalizedQuestion,
+                meetingID: snapshot.meeting.id,
+                language: language,
+                reason: .providerDisconnected,
+                context: context
+            )
+        } catch ChatGenerationError.deniedEgress {
+            return noAnswer(
+                question: normalizedQuestion,
+                meetingID: snapshot.meeting.id,
+                language: language,
+                reason: .userDeniedEgress,
+                context: context
+            )
+        } catch ChatGenerationError.remoteFailure {
+            return noAnswer(
+                question: normalizedQuestion,
+                meetingID: snapshot.meeting.id,
+                language: language,
+                reason: .remoteHTTPError,
+                context: context
             )
         } catch {
             return noAnswer(
@@ -170,24 +200,45 @@ public actor MeetingChatService {
         let excerpts = context.segments.map {
             EvidenceReference(segmentID: $0.segment.id, supportingText: $0.promptExcerpt)
         }
-        let citations = (try? validator.validateChatCitations(
-            excerpts,
-            meetingID: meetingID,
-            retrievedSegments: context.sourceSegments
-        )) ?? []
+        let citations: [EvidenceReference]
+        switch reason {
+        case .noRelevantEvidence:
+            citations = []
+        case .modelUnavailable, .unsupportedLocale, .invalidGeneratedEvidence,
+             .generationFailed, .providerDisconnected, .userDeniedEgress, .remoteHTTPError:
+            citations = (try? validator.validateChatCitations(
+                excerpts,
+                meetingID: meetingID,
+                retrievedSegments: context.sourceSegments
+            )) ?? []
+        }
         return ChatTurnRecord(
             meetingID: meetingID,
             responseLanguage: language,
             question: question,
-            answer: Self.noAnswerText(for: language),
+            answer: Self.noAnswerText(for: language, reason: reason),
             outcome: .noAnswer,
             noAnswerReason: reason,
-            citations: citations
+            citations: citations,
+            provider: generator.provider
         )
     }
 
-    private static func prompt(question: String, context: RetrievedMeetingContext) -> String {
-        "Question:\n\(question)\n\nRetrieved transcript excerpts:\n\(context.prompt)"
+    static func prompt(
+        question: String,
+        context: RetrievedMeetingContext,
+        priorTurns: [ChatTurnRecord]
+    ) -> String {
+        var parts: [String] = []
+        if !priorTurns.isEmpty {
+            let history = priorTurns.map { turn in
+                "Q: \(turn.question)\nA: \(turn.answer)"
+            }.joined(separator: "\n\n")
+            parts.append("Earlier grounded answers from this meeting (not evidence):\n\(history)")
+        }
+        parts.append("Question:\n\(question)")
+        parts.append("Retrieved transcript excerpts:\n\(context.prompt)")
+        return parts.joined(separator: "\n\n")
     }
 
     private static func citationsAreInSuppliedExcerpts(
@@ -205,39 +256,62 @@ public actor MeetingChatService {
         }
     }
 
-    private static func noAnswerText(for language: SpokenLanguage) -> String {
-        language.isVietnamese
-            ? "Tôi không thể trả lời câu hỏi này từ các đoạn hội thoại đã truy xuất."
-            : "I can’t answer this from the retrieved meeting transcript excerpts."
-    }
-
-    private static func capability(for model: SystemLanguageModel) -> MeetingChatCapability {
-        { language in
-            guard model.availability == .available else { return .unavailable }
-            let locale = Locale(identifier: language.rawValue)
-            return model.supportsLocale(locale) ? .available : .unsupportedLocale
+    static func noAnswerText(for language: SpokenLanguage, reason: ChatNoAnswerReason) -> String {
+        if language.isVietnamese {
+            switch reason {
+            case .noRelevantEvidence:
+                return "Tôi không thể trả lời câu hỏi này từ các đoạn hội thoại đã truy xuất."
+            case .modelUnavailable:
+                return "Mô hình trên máy này hiện không dùng được."
+            case .unsupportedLocale:
+                return "Ngôn ngữ trả lời này chưa được mô hình hỗ trợ."
+            case .providerDisconnected:
+                return "Nhà cung cấp AI chưa được kết nối. Mở Cài đặt để thêm khóa API."
+            case .userDeniedEgress:
+                return "Bạn chưa cho phép gửi đoạn trích ra khỏi máy này."
+            case .remoteHTTPError:
+                return "Nhà cung cấp AI từ chối hoặc không phản hồi."
+            case .invalidGeneratedEvidence, .generationFailed:
+                return "Tôi không thể xác thực một câu trả lời từ các đoạn hội thoại đã truy xuất."
+            }
+        }
+        switch reason {
+        case .noRelevantEvidence:
+            return "I can’t answer this from the retrieved meeting transcript excerpts."
+        case .modelUnavailable:
+            return "The on-this-Mac model is unavailable."
+        case .unsupportedLocale:
+            return "The selected answer language is not supported by the current model."
+        case .providerDisconnected:
+            return "This AI provider is not connected. Open Settings to add an API key."
+        case .userDeniedEgress:
+            return "You have not allowed retrieved excerpts to leave this Mac."
+        case .remoteHTTPError:
+            return "The AI provider refused or failed this request."
+        case .invalidGeneratedEvidence, .generationFailed:
+            return "I couldn’t validate a grounded answer from the retrieved excerpts."
         }
     }
+}
 
-    private static func generator(for model: SystemLanguageModel) -> MeetingChatGenerator {
-        { prompt in
-            let session = LanguageModelSession(
-                model: model,
-                tools: [],
-                instructions: """
-                Answer only from the retrieved transcript excerpts in the user prompt.
-                Do not infer facts absent from those excerpts. Return an answer only when it is supported.
-                Every citation must use a supplied segment UUID and an exact contiguous quote copied from that supplied excerpt.
-                """
-            )
-            let response = try await session.respond(to: prompt, generating: GeneratedChatPayload.self)
-            return MeetingChatGeneration(
-                answer: response.content.answer,
-                citations: response.content.citations.compactMap { citation in
-                    guard let segmentID = UUID(uuidString: citation.segmentID) else { return nil }
-                    return EvidenceReference(segmentID: segmentID, supportingText: citation.quote)
-                }
-            )
-        }
+struct ClosureChatGenerator: MeetingChatGenerating {
+    let provider: ChatProviderID = .appleOnDevice
+    let capabilityHandler: @Sendable (SpokenLanguage) -> MeetingChatModelCapability
+    let generateHandler: @Sendable (String) async throws -> MeetingChatGeneration
+
+    init(
+        capability: @escaping @Sendable (SpokenLanguage) -> MeetingChatModelCapability,
+        generate: @escaping @Sendable (String) async throws -> MeetingChatGeneration
+    ) {
+        self.capabilityHandler = capability
+        self.generateHandler = generate
+    }
+
+    func capability(for language: SpokenLanguage) -> MeetingChatModelCapability {
+        capabilityHandler(language)
+    }
+
+    func generate(_ request: MeetingChatRequest) async throws -> MeetingChatGeneration {
+        try await generateHandler(request.prompt)
     }
 }

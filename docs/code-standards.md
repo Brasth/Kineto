@@ -2,7 +2,7 @@
 
 ## Scope
 
-These rules apply to `KinetoApp/` and `Packages/KinetoCore/`. The enforced baseline is Swift 6 language mode with complete strict concurrency, macOS 26.1+, and Apple Silicon `arm64`, as configured by `Config/Base.xcconfig` and `Packages/KinetoCore/Package.swift`.
+These rules apply to `KinetoApp/` and `Packages/KinetoCore/`. The enforced baseline is Swift 6 language mode with complete strict concurrency, macOS 15.0+, and Apple Silicon `arm64`, as configured by `Config/Base.xcconfig` and `Packages/KinetoCore/Package.swift`.
 
 ## Swift 6 concurrency
 

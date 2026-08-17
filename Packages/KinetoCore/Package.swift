@@ -4,7 +4,7 @@ import PackageDescription
 
 let package = Package(
     name: "KinetoCore",
-    platforms: [.macOS("26.1")],
+    platforms: [.macOS("15.0")],
     products: [
         .library(name: "KinetoCore", targets: ["KinetoCore"])
     ],

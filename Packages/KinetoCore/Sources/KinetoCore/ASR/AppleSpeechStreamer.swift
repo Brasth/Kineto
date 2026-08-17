@@ -65,6 +65,7 @@ private final class PCMBufferInput: @unchecked Sendable {
 }
 
 /// One capture-track Apple SpeechAnalyzer session with volatile + final results.
+@available(macOS 26.0, *)
 actor AppleSpeechSourceSession {
     private let meetingID: UUID
     private let source: AudioSource
@@ -316,6 +317,7 @@ actor AppleSpeechSourceSession {
 }
 
 /// Multi-source Apple Speech pipeline over capture events.
+@available(macOS 26.0, *)
 public actor AppleSpeechMeetingPipeline {
     private let meetingID: UUID
     private let localeIdentifier: String
@@ -524,5 +526,19 @@ public actor AppleSpeechMeetingPipeline {
         output?.finish()
         output = nil
         consumer = nil
+    }
+}
+
+/// Type-erased cancel handle so AppModel can compile below macOS 26.
+public final class AppleSpeechPipelineHandle: @unchecked Sendable {
+    private let cancelImpl: @Sendable () async -> Void
+
+    @available(macOS 26.0, *)
+    public init(_ pipeline: AppleSpeechMeetingPipeline) {
+        self.cancelImpl = { await pipeline.cancel() }
+    }
+
+    public func cancel() async {
+        await cancelImpl()
     }
 }

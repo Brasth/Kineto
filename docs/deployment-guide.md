@@ -2,7 +2,7 @@
 
 ## Release status
 
-Kineto targets macOS 26.1 or later on Apple Silicon (`arm64`) and direct Developer ID distribution. The repository contains build and release automation, but there is no externally verified release yet. A local archive, an unsigned/unnotarized build, or a passing Core package suite is not a releasable artifact.
+Kineto targets macOS 15.0 or later on Apple Silicon (`arm64`) and direct Developer ID distribution. The repository contains build and release automation, but there is no externally verified release yet. A local archive, an unsigned/unnotarized build, or a passing Core package suite is not a releasable artifact.
 
 The main app is sandboxed with microphone and user-selected-file access only. `KinetoApp/Kineto.entitlements` has no network client/server entitlement. Meeting capture, transcription, translation, summary, and encrypted storage are intended to operate locally; the raw-audio option is off in the implemented app.
 
@@ -14,7 +14,7 @@ The main app is sandboxed with microphone and user-selected-file access only. `K
 | `Packages/KinetoCore/Package.swift` | Swift 6 Core package and tests |
 | `Binaries/CWhisper.xcframework` | Local arm64 whisper.cpp binary target |
 | `Models/ggml-large-v3-turbo-q5_0.bin` | Pinned development model bytes |
-| `Config/Base.xcconfig` | macOS 26.1, Swift 6, strict concurrency, arm64 |
+| `Config/Base.xcconfig` | macOS 15.0, Swift 6, strict concurrency, arm64 |
 | `Config/Release.xcconfig` | Optimized validated Release settings |
 | `Config/ExportOptions.plist` | Automatic Developer ID archive export |
 | `scripts/download-whisper-model.sh` | Pinned model acquisition and verification |
@@ -105,7 +105,7 @@ test -f Binaries/CWhisper.xcframework/macos-arm64/Headers/whisper.h
 test "$(tr -d '[:space:]' < Binaries/CWhisper.xcframework/WHISPER_CPP_COMMIT)" \
   = f0499fff95a089aa9969deb009cdd4892b3e74916
 ```
-The build script clones only the pinned commit, compiles a static arm64 library with Metal enabled and macOS 26.1 as the deployment target, then records provenance in `Binaries/CWhisper.xcframework/WHISPER_CPP_COMMIT`. For internal unsigned builds the verifier (`--internal`) only checks commit + structure/symbols. A future signed release path will additionally require byte-exact archive/header/info matches plus independent review.
+The build script clones only the pinned commit, compiles a static arm64 library with Metal enabled and macOS 15.0 as the deployment target, then records provenance in `Binaries/CWhisper.xcframework/WHISPER_CPP_COMMIT`. For internal unsigned builds the verifier (`--internal`) only checks commit + structure/symbols. A future signed release path will additionally require byte-exact archive/header/info matches plus independent review.
 
 
 ### Artifact gate

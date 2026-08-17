@@ -4,8 +4,8 @@ import Foundation
 public enum KinetoCore {
     public static let productName = "Kineto"
     public static let minimumSystemVersion = OperatingSystemVersion(
-        majorVersion: 26,
-        minorVersion: 1,
+        majorVersion: 15,
+        minorVersion: 0,
         patchVersion: 0
     )
 }

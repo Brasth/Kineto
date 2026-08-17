@@ -10,7 +10,7 @@ approved: 2026-07-18
 
 - Full Xcode 26.6, pinned for local release and CI builds.
 - Apple Swift 6.3 compiler; Swift 6 language mode.
-- macOS 26.1 deployment target; Apple Silicon `arm64` only.
+- macOS 15.0 deployment target; Apple Silicon `arm64` only. Apple Speech and Foundation Models remain macOS 26+ runtime gates.
 - Swift Package Manager for the local Core package and binary linkage.
 - Xcode owns app/helper bundles, assets, entitlements, schemes, archive, Developer ID signing, notarization, and the deterministic DMG.
 - Current prerequisite: install full Xcode 26.6; Command Line Tools alone cannot build the app project or XCFramework.

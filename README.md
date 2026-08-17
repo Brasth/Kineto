@@ -4,23 +4,24 @@ Kineto is a native, local-first macOS application for live meeting transcription
 
 ## Implemented slice
 
-- Native SwiftUI/AppKit app for Apple Silicon, macOS 26.1+
+- Native SwiftUI/AppKit app for Apple Silicon, macOS 15.0+
 - User-selected application or display audio through ScreenCaptureKit
 - Optional microphone captured as a separate `You` source
 - Local Whisper transcription through a pinned `whisper.cpp` XCFramework and model
-- Apple Speech live transcription for every locale macOS exposes at runtime; automatic multilingual recognition falls back to Whisper
+- Apple Speech live transcription on macOS 26+ for every locale macOS exposes at runtime; automatic multilingual recognition and macOS 15 use Whisper
 - Apple Translation EN↔VI with preflight asset preparation
-- Apple Foundation Models summaries with selectable brief, action-plan, or discussion-note structures and source evidence
+- Evidence-linked summaries via Apple Foundation Models on macOS 26+, optional Grok / OpenAI / Gemini, or extractive fallback
+- Grounded Ask chat with on-this-Mac Apple Intelligence or official BYOK providers (Grok, OpenAI, Gemini) through an isolated Chat Egress XPC
 - Authenticated encrypted meeting packages with per-meeting Keychain keys
 - Full local meeting library, interruption recovery, plaintext export, and cryptographic deletion
-- No network entitlement in the application target
+- No network entitlement in the application target; only isolated XPC helpers may use the network
 
 Chinese recognition labels exist in the domain and local ASR mapping, but Chinese translation and summary are outside this supported slice.
 
 ## Prerequisites
 
 - Apple Silicon Mac
-- macOS 26.1 or newer
+- macOS 15.0 or newer (Apple Speech live captions and on-device Apple Intelligence chat require macOS 26+)
 - Full Xcode 26.6 selected with `xcode-select`
 - Screen Recording permission for selected-source capture
 - Microphone permission only when microphone capture is enabled
@@ -57,7 +58,7 @@ Rebuild the native XCFramework or retrieve the model only through the pinned scr
 ./scripts/download-whisper-model.sh
 ```
 
-The application itself does not download models and has no network client entitlement. A user-selected model is copied into Application Support only after exact local verification.
+The application itself does not download models and has no network client entitlement. A user-selected model is copied into Application Support only after exact local verification. Optional Ask/summary cloud answers go through `KinetoChatEgressService.xpc` after consent, and send only retrieved excerpts.
 
 ## Data and privacy boundary
 

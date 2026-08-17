@@ -43,6 +43,9 @@ public enum ChatNoAnswerReason: String, Codable, Equatable, Sendable {
     case unsupportedLocale
     case invalidGeneratedEvidence
     case generationFailed
+    case providerDisconnected
+    case userDeniedEgress
+    case remoteHTTPError
 }
 
 public struct ChatTurnRecord: Codable, Equatable, Identifiable, Sendable {
@@ -55,6 +58,7 @@ public struct ChatTurnRecord: Codable, Equatable, Identifiable, Sendable {
     public let outcome: ChatTurnOutcome
     public let noAnswerReason: ChatNoAnswerReason?
     public let citations: [EvidenceReference]
+    public let provider: ChatProviderID?
 
     public init(
         id: UUID = UUID(),
@@ -65,7 +69,8 @@ public struct ChatTurnRecord: Codable, Equatable, Identifiable, Sendable {
         answer: String,
         outcome: ChatTurnOutcome,
         noAnswerReason: ChatNoAnswerReason? = nil,
-        citations: [EvidenceReference]
+        citations: [EvidenceReference],
+        provider: ChatProviderID? = nil
     ) {
         self.id = id
         self.meetingID = meetingID
@@ -76,6 +81,48 @@ public struct ChatTurnRecord: Codable, Equatable, Identifiable, Sendable {
         self.outcome = outcome
         self.noAnswerReason = noAnswerReason
         self.citations = citations
+        self.provider = provider
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case meetingID
+        case createdAt
+        case responseLanguage
+        case question
+        case answer
+        case outcome
+        case noAnswerReason
+        case citations
+        case provider
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        meetingID = try container.decode(UUID.self, forKey: .meetingID)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        responseLanguage = try container.decode(SpokenLanguage.self, forKey: .responseLanguage)
+        question = try container.decode(String.self, forKey: .question)
+        answer = try container.decode(String.self, forKey: .answer)
+        outcome = try container.decode(ChatTurnOutcome.self, forKey: .outcome)
+        noAnswerReason = try container.decodeIfPresent(ChatNoAnswerReason.self, forKey: .noAnswerReason)
+        citations = try container.decode([EvidenceReference].self, forKey: .citations)
+        provider = try container.decodeIfPresent(ChatProviderID.self, forKey: .provider)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(meetingID, forKey: .meetingID)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(responseLanguage, forKey: .responseLanguage)
+        try container.encode(question, forKey: .question)
+        try container.encode(answer, forKey: .answer)
+        try container.encode(outcome, forKey: .outcome)
+        try container.encodeIfPresent(noAnswerReason, forKey: .noAnswerReason)
+        try container.encode(citations, forKey: .citations)
+        try container.encodeIfPresent(provider, forKey: .provider)
     }
 }
 
@@ -214,6 +261,7 @@ public struct SummaryRecord: Codable, Equatable, Sendable {
     public let templateID: String
     public let templateVersion: Int
     public let items: [SummaryItem]
+    public let provider: ChatProviderID?
 
     public init(
         meetingID: UUID,
@@ -221,7 +269,8 @@ public struct SummaryRecord: Codable, Equatable, Sendable {
         createdAt: Date = Date(),
         templateID: String = SummaryRecord.generalConversationTemplateID,
         templateVersion: Int = SummaryRecord.generalConversationTemplateVersion,
-        items: [SummaryItem]
+        items: [SummaryItem],
+        provider: ChatProviderID? = nil
     ) {
         self.meetingID = meetingID
         self.language = language
@@ -229,5 +278,38 @@ public struct SummaryRecord: Codable, Equatable, Sendable {
         self.templateID = templateID
         self.templateVersion = templateVersion
         self.items = items
+        self.provider = provider
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case meetingID
+        case language
+        case createdAt
+        case templateID
+        case templateVersion
+        case items
+        case provider
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        meetingID = try container.decode(UUID.self, forKey: .meetingID)
+        language = try container.decode(SpokenLanguage.self, forKey: .language)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        templateID = try container.decode(String.self, forKey: .templateID)
+        templateVersion = try container.decode(Int.self, forKey: .templateVersion)
+        items = try container.decode([SummaryItem].self, forKey: .items)
+        provider = try container.decodeIfPresent(ChatProviderID.self, forKey: .provider)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(meetingID, forKey: .meetingID)
+        try container.encode(language, forKey: .language)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(templateID, forKey: .templateID)
+        try container.encode(templateVersion, forKey: .templateVersion)
+        try container.encode(items, forKey: .items)
+        try container.encodeIfPresent(provider, forKey: .provider)
     }
 }
