@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(FoundationModels)
 import FoundationModels
+#endif
 
 /// Optional on-device rewrite after Apple Translation + deterministic post-edit.
 ///
@@ -30,19 +32,25 @@ public struct TranslationRefineRequest: Sendable {
     }
 }
 
+#if canImport(FoundationModels)
+@available(macOS 26.0, *)
 @Generable
 private struct GeneratedTranslationRewrite {
     @Guide(description: "The rewritten translation only. No quotes, labels, or commentary.")
     var text: String
 }
+#endif
 
 public enum TranslationRefiner {
     /// Foundation Models rewrite used by the application. Core tests pass a fake.
-    public static func foundationModels(
-        model: SystemLanguageModel = .default
-    ) -> TranslationRefining {
+    public static func foundationModels() -> TranslationRefining {
         { request in
-            await refine(request, model: model)
+            #if canImport(FoundationModels)
+            if #available(macOS 26.0, *) {
+                return await refine(request, model: .default)
+            }
+            #endif
+            return nil
         }
     }
 
@@ -71,6 +79,8 @@ public enum TranslationRefiner {
         """
     }
 
+    #if canImport(FoundationModels)
+    @available(macOS 26.0, *)
     private static func refine(
         _ request: TranslationRefineRequest,
         model: SystemLanguageModel
@@ -103,4 +113,5 @@ public enum TranslationRefiner {
             return nil
         }
     }
+    #endif
 }

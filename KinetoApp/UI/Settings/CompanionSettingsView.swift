@@ -142,9 +142,11 @@ struct CompanionSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            ChatProviderSettingsView(model: model)
         }
         .formStyle(.grouped)
-        .frame(maxWidth: 420, alignment: .topLeading)
+        .frame(maxWidth: 520, alignment: .topLeading)
         .padding(.vertical, 16)
         .padding(.horizontal, 12)
         .task {

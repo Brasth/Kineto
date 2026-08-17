@@ -4,12 +4,12 @@
 
 Kineto is a local-first macOS meeting assistant. It captures a user-selected application or display, optionally captures the microphone as a separate `You` track, transcribes locally with Whisper, translates finalized English and Vietnamese segments, and creates an evidence-linked summary after recording stops.
 
-The current build is a development build for Apple Silicon Macs running macOS 26.1 or newer. It is not a signed or notarized public installer.
+The current build is a development build for Apple Silicon Macs running macOS 15.0 or newer. It is not a signed or notarized public installer.
 
 ## Prerequisites
 
 - Apple Silicon Mac
-- macOS 26.1 or newer
+- macOS 15.0 or newer
 - Full Xcode 26.6 selected with `xcode-select`
 - Screen & System Audio Recording permission
 - Microphone permission when the microphone option is enabled
@@ -121,8 +121,10 @@ Application capture may include every audible window from that application. Disp
 
 Completed meetings appear in the meeting library.
 
-- Select a meeting to reopen its transcript and summary. Use **Summary** for the generated evidence-linked review or **Ask** for a dedicated grounded conversation view; chat is unavailable during capture and processing. The question field supports up to 1,500 characters: **Return** adds a line; **Command-Return** or **Send** submits it. Questions and saved answers stay on this Mac in the encrypted meeting package.
-- Grounded chat answers link exact source excerpts. If Kineto cannot find relevant final transcript support, or the local model is unavailable, it displays an explicit no-answer rather than guessing.
+- Select a meeting to reopen its transcript and summary. Use **Summary** for the generated evidence-linked review or **Ask** for a dedicated grounded conversation view; chat is unavailable during capture and processing. The question field supports up to 1,500 characters: **Return** adds a line; **Command-Return** or **Send** submits it. **Stop** cancels an in-flight answer.
+- Choose an AI provider in the composer or **Settings → AI providers**: **On this Mac** (Apple Intelligence on macOS 26+), **Grok**, **OpenAI**, or **Gemini**. Remote providers use your own official API key stored in the Keychain on this Mac.
+- The first cloud send asks you to allow it. Only the question and retrieved transcript excerpts leave this Mac. The full meeting, audio, other meetings, and encryption keys stay local. The composer badge shows **On this Mac** or **Sent to {provider}**.
+- Grounded chat answers link exact source excerpts. Failed validation is shown as “not saved as a meeting fact.” Saved answers, including the provider label, stay in the encrypted meeting package.
 - Select an **Evidence** link to inspect the exact source segment supporting a summary item or chat answer.
 - **Export Plaintext…** creates a user-selected JSON transcript copy, including saved chat turns. The exported copy is outside Kineto's encryption and deletion boundary.
 - **Delete…** removes Kineto's meeting keys before best-effort removal of encrypted package bytes and encrypted chat history. Plaintext transcript exports must be deleted separately.
@@ -189,7 +191,7 @@ Connect to the network only if macOS needs to install Apple's language assets, r
 
 - English ↔ Vietnamese translation only
 - Chinese may be recognized by Whisper but Chinese translation and summaries are not supported
-- No cloud AI providers, accounts, OAuth, or API-key workflow
+- Cloud Ask/summary uses official API keys only; unofficial subscription OAuth (including Antigravity CLI tokens) is not supported
 - No browser-tab isolation or meeting-platform bot
 - No retained raw-audio package
 - No signed/notarized public DMG yet

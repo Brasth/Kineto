@@ -2,7 +2,7 @@
 
 ## Overview
 
-Kineto is a Swift 6 native macOS 26.1+ application with a thin SwiftUI/AppKit shell and a local `KinetoCore` Swift package. The implemented path is selected-source and optional-microphone capture → 16 kHz normalization → installed Apple SpeechAnalyzer streaming (volatile UI captions plus persisted final segments) or local whisper.cpp fallback → finalized source persistence → optional Apple Translation → post-stop Foundation Models summary → encrypted reopen/transcript-export/delete.
+Kineto is a Swift 6 native macOS 15.0+ application with a thin SwiftUI/AppKit shell and a local `KinetoCore` Swift package. The implemented path is selected-source and optional-microphone capture → 16 kHz normalization → Whisper or, on macOS 26+, installed Apple SpeechAnalyzer streaming (volatile UI captions plus persisted final segments) → finalized source persistence → optional Apple Translation → post-stop summary (Foundation Models, optional remote provider, or extractive) → grounded Ask chat → encrypted reopen/transcript-export/delete.
 
 The application target is sandboxed and declares microphone plus user-selected file access for model selection, but no network client entitlement. Meetings created by the current UI set `retainsAudio` to `false`; only text-domain records are written.
 
@@ -30,7 +30,10 @@ Generated SwiftPM state under `Packages/KinetoCore/.build/` and `.swiftpm/` is n
 | `KinetoApp/App/KinetoApp.swift` | `KinetoApp`; creates one `AppModel`, hosts `HomeView`, defines window sizing/style, and observes `CapturePresentationMode` to reversibly order identified main `WindowGroup` windows out in floating mode or reveal them in main-window mode |
 | `KinetoApp/App/AppModel.swift` | `@MainActor @Observable AppModel`; composes all Core actors, ScreenCaptureKit picker, capability checks, meeting lifecycle, live event consumption, derived-record orchestration, transcript export/delete, explicit `CapturePresentationMode`, and the sole `performSignalGateAction(_:)` authority for revalidating guarded overlay/menu actions |
 | `KinetoApp/UI/FloatingCaption/` | `FloatingCaptionPanelCoordinator`, `FloatingCaptionDragSession`, `FloatingCaptionCompanionPanel`, `FloatingCaptionView`, `FloatingCaptionPresentation`, `FloatingCaptionPetCatalog`, `FloatingCaptionPetVisualPreferences`; nonactivating active-capture compact transcript subtitle bar plus tight transparent decorative AppKit child companion panel, projected only while `AppModel.capturePresentationMode == .floating`, with one persisted transcript anchor and companion placement derived from it. `FloatingCaptionPetCatalog` is an immutable five-theme catalog of distinct role-based 12×12 sprites; `FloatingCaptionOverlayPresentation` carries the active-capture projection of canonical `SignalGatePresentation`; its compact Pause, Stop & Process, and Show Meeting Details controls emit `SignalGateAction` only to `AppModel.performSignalGateAction(_:)`. Show Meeting Details returns to the existing live meeting window, not a route or second panel. The coordinator-owned transient drag session makes companion pointer drag primary: while it is held, the caption surface and controls are visually suppressed and inaccessible but its panel/frame and linked geometry stay alive, presentation delivery retains only the latest update, and that latest presentation restores immediately on end. Pause, Stop & Process, Show Meeting Details, source loss, processing, and paused Resume return to main-window mode; Use Floating Captions is the explicit active-capture re-entry. The companion is drag-only, decorative, content-free, nonactivating, and normally screen-share visible. |
-| `KinetoApp/UI/Settings/CompanionSettingsView.swift` | Global Pet Mode settings: five catalog theme picker, size and motion controls, and an opaque accent picker that retains the previous valid accent when conversion fails |
+| `KinetoApp/UI/Settings/CompanionSettingsView.swift` | Global Pet Mode settings plus transcription, summary, and AI provider (API key) settings |
+| `KinetoApp/UI/Chat/` | `MeetingChatView`, `MeetingChatComposer`, `ChatTurnView`, `ChatProviderSettingsView`; Ask conversation extracted from HomeView |
+| `KinetoApp/Chat/` | `ChatEgressServiceProtocol`, `ChatEgressXPCClient`; main-app side of isolated chat egress |
+| `KinetoChatEgressService/` | Sandboxed XPC helper with `network.client`; official Grok / OpenAI / Gemini HTTP only |
 | `KinetoApp/UI/Home/HomeView.swift` | `HomeView`, `TranscriptRow`, `EvidenceSheet`; navigation and home/preflight/live/processing/summary/privacy screens |
 | `KinetoApp/Kineto.entitlements` | App Sandbox, audio input, user-selected read/write; no network client entitlement |
 
@@ -134,7 +137,7 @@ Focused pet/presentation coverage passed 33 tests with 0 failures. The final ful
 
 | Path | Purpose |
 |---|---|
-| `Packages/KinetoCore/Package.swift` | Swift tools 6.2, macOS 26.1 floor, local `CWhisper` binary target, Apple framework links |
+| `Packages/KinetoCore/Package.swift` | Swift tools 6.2, macOS 15.0 floor, local `CWhisper` binary target, Apple framework links |
 | `Kineto.xcodeproj/project.pbxproj` | App target and local package integration |
 | `Config/Base.xcconfig` | Shared build identity/version settings |
 | `Config/Debug.xcconfig`, `Config/Release.xcconfig` | Configuration-specific settings |

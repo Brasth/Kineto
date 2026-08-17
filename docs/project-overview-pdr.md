@@ -29,35 +29,36 @@ A user on a supported Apple Silicon Mac can:
 
 | Area | Supported scope in the current implementation |
 |---|---|
-| Platform | Native macOS 26.1+; Apple Silicon `arm64`; Swift 6 language mode |
+| Platform | Native macOS 15.0+; Apple Silicon `arm64`; Swift 6 language mode |
 | Capture | Manual selected-application or display audio via ScreenCaptureKit; optional microphone |
 | Source labels | `Selected Source` and `You`; application/display scope remains visible |
-| ASR | Apple SpeechAnalyzer/SpeechTranscriber is the default live path for a user-selected, runtime-supported macOS locale with its asset installed; volatile captions never persist. The user can select Whisper for local automatic multilingual recognition |
+| ASR | Apple SpeechAnalyzer/SpeechTranscriber is the default live path on macOS 26+ for a user-selected, runtime-supported macOS locale with its asset installed; volatile captions never persist. Whisper is the default live path on macOS 15 and remains selectable everywhere |
 | Languages | Apple live ASR exposes every locale macOS reports at runtime and records the selected BCP-47 tag. Whisper remains the local automatic fallback. Translation and summaries remain EN/VI-only |
 | Translation | Finalized EN→VI and VI→EN segments only; requires installed Apple Translation assets |
 | Floating captions | A linked pair of automatic, nonactivating `NSPanel`s appears only when active capture is in `AppModel.capturePresentationMode == .floating`: a compact transcript subtitle bar follows below a tight transparent decorative companion AppKit child panel. Successful Start Meeting enters floating mode automatically; `KinetoApp` reversibly orders every identified main `WindowGroup` window out with `orderOut(nil)` and never closes them. The pair shares one displayed anchor, display clamp, capture lifecycle, and menu-bar Reset Caption Position action; only transcript placement persists. The active subtitle bar carries compact **Pause**, **Stop & Process**, and **Show Meeting Details** controls only when the canonical signal-gate presentation permits each action. Show Meeting Details, Pause, Stop & Process, source loss, processing, and every non-capturing phase return `capturePresentationMode` to `.mainWindow`, hide the pair, and reveal the existing live meeting window. Resume leaves the main window shown; **Use Floating Captions** exists only in that active live meeting surface and explicitly re-enters floating mode. Controls are separate from the accessible header drag region and caption text remains noninteractive. Pointer-dragging the visible companion is the primary move affordance: its frame remains under the pointer and the subtitle panel/frame remain linked, while the caption surface and controls are visually suppressed and inaccessible for the held companion drag, then restore immediately on release. The header remains the accessible fallback move handle. The panels may remain visible in screenshots and screen sharing; no privacy claim changes. |
 | Pet Mode | Optional and default-off original pixel-art companion with five built-in themes—Signal Cat, Orbit Fox, Beacon Frog, Night Owl, and Meadow Rabbit—configured globally in Kineto Settings rather than meeting Preflight. During active capture its linked transparent child panel provides the primary pointer move affordance; it has no independent placement persistence. It receives non-content `FloatingCaptionPetState` plus persisted appearance, size, motion, and opaque canonical sRGB accent preferences; settings persist as a versioned Codable snapshot with independent per-field fallback for missing or invalid values. Picker colors that cannot be converted retain the prior valid accent. The pet has no capture data, transcript data, translation, audio, speaker, source application/window identity, or sentiment input; it does not retain or log data, create independent work, accept focus or content interaction, or conceal itself from screenshots or screen sharing, where it may be visible. Its arbitrary accent applies only to companion pixels, never to recording, warning, transcript, translation, focus, or action semantics. |
 | Menu bar | Capture and paused status is generic and content-free; it exposes no caption text, source identity, or capture content, makes Reset Caption Position reachable, and keeps Resume available while paused |
-| Summary | Post-stop English or Vietnamese summary with selectable Executive brief, Action plan, or Discussion notes structures; Foundation Models availability and locale support are checked at runtime |
-| Local chat | Post-stop question-and-answer over the active stopped meeting, including after reopening. Deterministic retrieval supplies only finalized source segments plus prompt-only gap boundaries; translations, summaries, earlier turns, audio, remote providers, and other meetings never enter the model. Foundation Models runs without tools |
+| Summary | Post-stop English or Vietnamese summary with selectable Executive brief, Action plan, or Discussion notes structures; Apple Foundation Models on macOS 26+, optional user-consented remote provider, otherwise extractive fallback |
+| Local chat | Post-stop question-and-answer over the active stopped meeting, including after reopening. Deterministic retrieval supplies only finalized source segments plus prompt-only gap boundaries. Optional last-six grounded turns may enter the prompt. The generator may be Apple Foundation Models on macOS 26+ or a user-chosen official Grok / OpenAI / Gemini API key via Chat Egress XPC. Remote calls send retrieved excerpts only after explicit consent. Citation validation stays local |
 | Evidence | Grounded chat turns require one or more exact contiguous final-segment quotes. `noRelevantEvidence` turns carry zero citations; unavailable, unsupported, invalid-output, and generation-failure turns retain only retrieved source excerpts |
 | Persistence | Authenticated AES-GCM meeting generations; per-meeting 256-bit keys are stored in Keychain as device-only, available-when-unlocked items. Encrypted chat history stores question, answer/outcome/reason, and citations or excerpts |
 | Library | List and reopen local meetings; explicit plaintext JSON export includes chat history and remains outside Kineto's deletion boundary. Key-first deletion removes encrypted meeting data and the meeting package |
 | Audio retention | **Off in this supported slice.** The app creates meetings with `retainsAudio: false`; no retained-audio sink is wired into the app workflow |
-| Network | The main app entitlement file contains no network-client or network-server entitlement; model import is user-selected and locally size/hash verified |
+| Network | The main app entitlement file contains no network-client or network-server entitlement; model import is user-selected and locally size/hash verified. Isolated XPC helpers (`KinetoPetCatalogService`, `KinetoChatEgressService`) may use `network.client` and never open meeting packages |
 | Distribution target | Direct Developer ID distribution, subject to the open release gates below |
 
 ## Explicit non-goals
 
 The current vertical slice does not provide:
 
-- Cloud transcription, cloud translation, cloud summaries, synchronization, analytics, or accounts.
+- Cloud transcription, cloud translation, synchronization, analytics, or vendor accounts owned by Kineto.
+- Unofficial subscription OAuth, including Antigravity CLI token reuse.
 - Meeting-platform bots, automatic meeting joining, or automatic recording start/resume.
 - Diarization, speaker identity inference, or relabeling mixed source audio as a specific participant.
 - Browser-tab audio isolation; application selection may include sibling browser/process audio.
 - Autonomous actions, tools, calendar changes, messages, or task execution from meeting content.
 - A localhost model server, downloadable executable code, plug-ins, or mutable remote model manifests.
-- Intel Mac support or operating systems earlier than macOS 26.1.
+- Intel Mac support or operating systems earlier than macOS 15.0.
 - Retained raw audio in the current app workflow.
 - A claim that the app activates Zoom, Google Meet, or Teams recording indicators.
 - Public-release readiness until every external gate is evidenced.
@@ -79,14 +80,14 @@ The current vertical slice does not provide:
 | FR-10 | Summary generation must occur only after stop and must reject unsupported or unknown evidence. | `SummaryService`, `EvidenceValidator`; evidence test |
 | FR-11 | Meetings must be reopenable from encrypted local storage and deletable by destroying keys before package files. | `MeetingPackageStore`, `KeychainMeetingKeyStore`; lifecycle/tamper/deletion tests |
 | FR-12 | Plaintext transcript export must be explicit and disclosed as outside Kineto's encrypted storage and deletion boundary. | `AppModel.exportCurrentMeeting()`, save-panel disclosure, atomic export test |
-| FR-13 | Local chat must run only after stop, search one meeting’s finalized source ledger, validate exact citations, and persist completed turns as encrypted derived records included in explicit export and key-first deletion. | `MeetingChatService`, `MeetingPackageStore.append(_ chatTurn:)`, chat/storage tests |
+| FR-13 | Chat must run only after stop, search one meeting’s finalized source ledger, validate exact citations locally, persist completed turns as encrypted derived records, and send retrieved excerpts off-device only through Chat Egress XPC after explicit consent. | `MeetingChatService`, `RemoteChatGenerator`, `KinetoChatEgressService`, `MeetingPackageStore.append(_ chatTurn:)`, chat/storage tests |
 | FR-14 | During active capture, the compact transcript subtitle bar and tight transparent companion child panel must remain linked above/below one shared persisted transcript anchor and render only when `AppModel.capturePresentationMode == .floating`. Successful Start Meeting selects floating mode and `KinetoApp` reversibly orders every identified main `WindowGroup` window out; `.mainWindow` hides the pair and reveals those windows without closing them. The subtitle bar receives the canonical signal-gate presentation and renders compact Pause, Stop & Process, and Show Meeting Details controls only when that snapshot permits them; actions route through `AppModel` for revalidation, and Show Meeting Details returns to the existing live meeting window rather than a new route or panel. Pause, Stop & Process, source loss, processing, and non-capturing states also return to `.mainWindow`; Resume leaves the main window shown, and only Use Floating Captions from the active live meeting explicitly re-enters floating mode. Controls are separate from the accessible header drag region and caption text remains actionless. Pointer-dragging the visible companion is the primary move affordance: its frame remains under the pointer and the subtitle panel/frame remain linked, while the caption surface and controls are visually suppressed and inaccessible for the held companion drag and restore immediately on release. The header is the accessible fallback move handle; the companion remains drag-only, decorative, content-free, and normally visible in screenshots and screen sharing.
 
 ## Non-functional requirements
 
 | ID | Requirement | Boundary or status |
 |---|---|---|
-| NFR-01 | The capture application must have no unrestricted network entitlement. | Present in `Kineto.entitlements`; release entitlement inspection remains required |
+| NFR-01 | The capture application must have no unrestricted network entitlement. Optional Chat Egress XPC may send user-consented retrieved excerpts. | Present in `Kineto.entitlements`; Chat Egress has `network.client` only; release entitlement inspection remains required |
 | NFR-02 | Meeting processing must remain local and continue without network access after required assets are installed. | Architectural boundary implemented; offline end-to-end trial remains required |
 | NFR-03 | Capture callbacks and streams must be bounded so ML does not block capture. | Async stream buffering is bounded; saturation behavior needs real-load proof |
 | NFR-04 | Source records must be append-only and derived records must reference source IDs. | Store guards and authenticated manifest validation implemented |
@@ -110,7 +111,8 @@ The current vertical slice does not provide:
 ### Network boundary
 
 - `Kineto.entitlements` enables the App Sandbox, audio input, and user-selected file access only; it does not declare network-client/server access.
-- Meeting inference does not require a network endpoint.
+- Isolated XPC helpers may declare `network.client`. Chat Egress receives only the already-retrieved excerpt prompt and a short-lived API key.
+- Capture, transcription, translation, and encrypted storage do not require a network endpoint.
 - The implemented app imports model bytes through a user-selected file and verifies exact size and SHA-256 locally.
 - Repository download scripts are development/release tooling, not proof that the shipping app can safely download assets.
 
@@ -140,7 +142,7 @@ The current vertical slice does not provide:
 
 | Acceptance area | Repository evidence | Current conclusion |
 |---|---|---|
-| Platform contract | `Package.swift`, `Config/Base.xcconfig`, `KinetoCoreSmokeTests` | Source/config align to macOS 26.1+, arm64, Swift 6; no build result claimed |
+| Platform contract | `Package.swift`, `Config/Base.xcconfig`, `KinetoCoreSmokeTests` | Source/config align to macOS 15.0+, arm64, Swift 6; no build result claimed |
 | Audio normalization | `AudioNormalizerTests` | Deterministic contract source exists; not executed in this pass |
 | Final segment and gap persistence | `TranscriptCoordinatorTests` | Flush/persistence contract source exists; not executed in this pass |
 | Encrypted lifecycle | `MeetingPackageStoreTests` | Meeting encryption, export, deletion, and recovery contracts are covered by repository tests |

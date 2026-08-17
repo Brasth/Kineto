@@ -2,7 +2,7 @@
 
 ## Overview
 
-Kineto is a native, sandboxed Apple Silicon application for macOS 26.1+. The implemented vertical slice captures a user-selected app or display plus an optional microphone, transcribes locally with a user-selected runtime-supported Apple SpeechAnalyzer locale for live partial captions and final segments, falls back to pinned `whisper.cpp` for automatic multilingual recognition or when Apple Speech is unavailable, translates finalized English/Vietnamese segments with Apple Translation, creates a post-stop conversation summary with Foundation Models, and stores meeting text in authenticated encrypted packages.
+Kineto is a native, sandboxed Apple Silicon application for macOS 15.0+. The implemented vertical slice captures a user-selected app or display plus an optional microphone, transcribes locally with Whisper or, on macOS 26+, a user-selected runtime-supported Apple SpeechAnalyzer locale for live partial captions and final segments, translates finalized English/Vietnamese segments with Apple Translation, creates a post-stop conversation summary, and stores meeting text in authenticated encrypted packages. Optional Ask answers may send retrieved excerpts through `KinetoChatEgressService` after consent.
 
 The main application has no network client entitlement. Model acquisition is outside the meeting path: the user imports a file, or a development checkout supplies one. Runtime meeting processing is local. Raw audio retention is off in `AppModel.startMeeting()` (`retainsAudio: false`), and no audio writer is connected in this slice.
 

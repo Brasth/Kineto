@@ -15,6 +15,18 @@ public actor AppleSpeechCapability {
     public init() {}
 
     public func status() async -> AppleSpeechStatus {
+        guard #available(macOS 26.0, *) else {
+            return AppleSpeechStatus(
+                isFrameworkAvailable: false,
+                locales: [],
+                notice: "Apple Speech live captions require macOS 26. Use Whisper on this Mac."
+            )
+        }
+        return await modernStatus()
+    }
+
+    @available(macOS 26.0, *)
+    private func modernStatus() async -> AppleSpeechStatus {
         guard SpeechTranscriber.isAvailable else {
             return AppleSpeechStatus(
                 isFrameworkAvailable: false,
@@ -58,6 +70,12 @@ public actor AppleSpeechCapability {
 
     /// Downloads one selected, runtime-supported Apple Speech asset.
     public func installAsset(localeIdentifier: String) async throws -> AppleSpeechStatus {
+        guard #available(macOS 26.0, *) else { throw AppleSpeechCapabilityError.unavailable }
+        return try await modernInstallAsset(localeIdentifier: localeIdentifier)
+    }
+
+    @available(macOS 26.0, *)
+    private func modernInstallAsset(localeIdentifier: String) async throws -> AppleSpeechStatus {
         guard SpeechTranscriber.isAvailable else { throw AppleSpeechCapabilityError.unavailable }
         guard let locale = await equivalent(to: localeIdentifier) else {
             throw AppleSpeechCapabilityError.localeUnsupported
@@ -73,6 +91,7 @@ public actor AppleSpeechCapability {
         return await status()
     }
 
+    @available(macOS 26.0, *)
     public func makeTranscriber(localeIdentifier: String) async throws -> SpeechTranscriber {
         guard SpeechTranscriber.isAvailable else { throw AppleSpeechCapabilityError.unavailable }
         guard let locale = await equivalent(to: localeIdentifier) else {
@@ -86,8 +105,7 @@ public actor AppleSpeechCapability {
         return transcriber
     }
 
-
-
+    @available(macOS 26.0, *)
     private func equivalent(to identifier: String) async -> Locale? {
         let locale = Locale(identifier: identifier)
         if let match = await SpeechTranscriber.supportedLocale(equivalentTo: locale) {
@@ -97,6 +115,7 @@ public actor AppleSpeechCapability {
         return supported.first { matches($0, identifier) }
     }
 
+    @available(macOS 26.0, *)
     private func makeTranscriber(for locale: Locale) -> SpeechTranscriber {
         SpeechTranscriber(
             locale: locale,
@@ -106,6 +125,7 @@ public actor AppleSpeechCapability {
         )
     }
 
+    @available(macOS 26.0, *)
     private static func localeAssetState(
         for status: AssetInventory.Status
     ) -> LocaleAssetState {
@@ -123,6 +143,7 @@ public actor AppleSpeechCapability {
 
     /// Retains only the currently selected locale so changing languages cannot
     /// exhaust Speech's finite reservation quota.
+    @available(macOS 26.0, *)
     private func reserveSelectedLocale(_ locale: Locale) async throws {
         if let reservedLocale, Self.sameLocale(reservedLocale, locale) {
             return
@@ -158,7 +179,6 @@ public actor AppleSpeechCapability {
         lhs.identifier(.bcp47)
             .caseInsensitiveCompare(rhs.identifier(.bcp47)) == .orderedSame
     }
-
 
     private func matches(_ locale: Locale, _ candidate: String) -> Bool {
         let id = locale.identifier

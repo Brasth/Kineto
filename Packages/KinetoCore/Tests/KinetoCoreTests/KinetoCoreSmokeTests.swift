@@ -3,6 +3,6 @@ import Testing
 
 @Test func exposesProductContract() {
     #expect(KinetoCore.productName == "Kineto")
-    #expect(KinetoCore.minimumSystemVersion.majorVersion == 26)
-    #expect(KinetoCore.minimumSystemVersion.minorVersion == 1)
+    #expect(KinetoCore.minimumSystemVersion.majorVersion == 15)
+    #expect(KinetoCore.minimumSystemVersion.minorVersion == 0)
 }

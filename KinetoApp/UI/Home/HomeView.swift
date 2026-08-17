@@ -58,14 +58,9 @@ struct HomeView: View {
         source: Locale.Language(identifier: "vi"),
         target: Locale.Language(identifier: "en")
     )
-    @State private var chatQuestion = ""
-    @FocusState private var chatQuestionFocused: Bool
-    @ScaledMetric(relativeTo: .body) private var chatEditorHeight = 36
-    @State private var submittedChatQuestion: String?
     @State private var sidebarVisibility: NavigationSplitViewVisibility = .all
     @State private var usesCompactPresentation = false
     @State private var reviewWorkspace: ReviewPresentationPolicy.Workspace = .summary
-    private static let chatQuestionLimit = 1_500
 
     var body: some View {
         GeometryReader { proxy in
@@ -185,6 +180,16 @@ struct HomeView: View {
         .sheet(item: $evidenceSelection) { selection in
             EvidenceSheet(selection: selection)
         }
+        .sheet(item: Binding(
+            get: { model.pendingChatEgress },
+            set: { model.pendingChatEgress = $0 }
+        )) { pending in
+            ChatEgressConsentSheet(
+                provider: pending.provider,
+                onAllow: { model.confirmPendingChatEgress() },
+                onCancel: { model.cancelPendingChatEgress() }
+            )
+        }
         }
         .toolbar {
             if !canPresentSidebar {
@@ -260,7 +265,12 @@ struct HomeView: View {
                     .controlSize(.large)
                     .keyboardShortcut("n", modifiers: .command)
                 HStack(spacing: 18) {
-                    Label("No meeting-content cloud", systemImage: "network.slash")
+                    Label(
+                        model.hasConnectedRemoteProvider
+                            ? "Ask can send retrieved excerpts"
+                            : "No meeting-content cloud unless you connect a provider",
+                        systemImage: model.hasConnectedRemoteProvider ? "network" : "network.slash"
+                    )
                     Label("Raw audio off", systemImage: "speaker.slash")
                 }
                 .font(.caption)
@@ -744,68 +754,47 @@ struct HomeView: View {
     }
 
     private var regularSummaryReview: some View {
-        Group {
-            if reviewWorkspace == .ask {
-                // Full-width Ask experience (matches compact behavior)
-                VStack(spacing: 0) {
-                    Picker("Review workspace", selection: regularReviewWorkspaceBinding) {
-                        ForEach(ReviewPresentationPolicy.workspaceOptions(isCompact: false), id: \.self) {
-                            reviewWorkspaceLabel($0).tag($0)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .padding(12)
-                    .accessibilityLabel("Meeting review workspace")
-
-                    Divider()
-
-                    GeometryReader { geo in
-                        chatWorkspace
-                            .frame(width: geo.size.width, height: geo.size.height)
+        HSplitView {
+            VStack(spacing: 0) {
+                Picker("Review workspace", selection: regularReviewWorkspaceBinding) {
+                    ForEach(ReviewPresentationPolicy.workspaceOptions(isCompact: false), id: \.self) {
+                        reviewWorkspaceLabel($0).tag($0)
                     }
                 }
-            } else {
-                // Summary + transcript evidence side-by-side
-                HSplitView {
-                    VStack(spacing: 0) {
-                        Picker("Review workspace", selection: regularReviewWorkspaceBinding) {
-                            ForEach(ReviewPresentationPolicy.workspaceOptions(isCompact: false), id: \.self) {
-                                reviewWorkspaceLabel($0).tag($0)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
-                        .padding(12)
-                        .accessibilityLabel("Meeting review workspace")
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .padding(12)
+                .accessibilityLabel("Meeting review workspace")
 
-                        Divider()
+                Divider()
 
-                        Group {
-                            switch reviewWorkspace {
-                            case .transcript, .summary:
-                                summaryWorkspace
-                            case .ask:
-                                chatWorkspace   // unreachable here
-                            }
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    }
-                    .frame(
-                        minWidth: ReviewPresentationPolicy.regularReviewPaneMinimumWidth,
-                        idealWidth: 460,
-                        maxWidth: .infinity,
-                        maxHeight: .infinity
-                    )
-
-                    transcriptWorkspace
-                        .frame(
-                            minWidth: ReviewPresentationPolicy.transcriptPaneMinimumWidth,
-                            maxWidth: .infinity,
-                            maxHeight: .infinity
+                Group {
+                    switch reviewWorkspace {
+                    case .transcript, .summary:
+                        summaryWorkspace
+                    case .ask:
+                        MeetingChatView(
+                            model: model,
+                            evidenceSelection: $evidenceSelection,
+                            onOpenSettings: { model.show(.settings) }
                         )
+                    }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            .frame(
+                minWidth: ReviewPresentationPolicy.regularReviewPaneMinimumWidth,
+                idealWidth: 460,
+                maxWidth: .infinity,
+                maxHeight: .infinity
+            )
+
+            transcriptWorkspace
+                .frame(
+                    minWidth: ReviewPresentationPolicy.transcriptPaneMinimumWidth,
+                    maxWidth: .infinity,
+                    maxHeight: .infinity
+                )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -850,7 +839,12 @@ struct HomeView: View {
                     case .summary:
                         summaryWorkspace
                     case .ask:
-                        chatWorkspace
+                        MeetingChatView(
+                            model: model,
+                            evidenceSelection: $evidenceSelection,
+                            showsSourceStrip: true,
+                            onOpenSettings: { model.show(.settings) }
+                        )
                     }
                 }
                 .frame(width: geo.size.width, height: geo.size.height)
@@ -956,365 +950,8 @@ struct HomeView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var chatWorkspace: some View {
-        VStack(spacing: 0) {
-            Group {
-                if model.chatTurns.isEmpty {
-                    ScrollView {
-                        VStack(spacing: 6) {
-                            Text("Try a prompt")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.secondary)
-
-                            chatQuestionSuggestions
-                        }
-                        .padding(8)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    List {
-                        Section("Conversation") {
-                            ForEach(Array(model.chatTurns.reversed()), id: \.id) { turn in
-                                chatTurn(turn)
-                                    .padding(.vertical, 6)
-                                    .listRowSeparator(.hidden)
-                                    .listRowBackground(Color.clear)
-                            }
-                        }
-                    }
-                    .listStyle(.plain)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.clear)
-
-            VStack(spacing: 0) {
-                Divider()
-
-                meetingChatComposer
-                    .padding(8)
-            }
-            .background(.bar)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.clear)
-    }
-
-    private var chatQuestionSuggestions: some View {
-        VStack(spacing: 10) {
-            Text("Try a prompt")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 8) {
-                    chatSuggestionButton("What decisions were made?")
-                    chatSuggestionButton("What should happen next?")
-                    chatSuggestionButton("What remains unresolved?")
-                }
-
-                VStack(spacing: 8) {
-                    chatSuggestionButton("What decisions were made?")
-                    chatSuggestionButton("What should happen next?")
-                    chatSuggestionButton("What remains unresolved?")
-                }
-            }
-        }
-        .accessibilityElement(children: .contain)
-    }
-
-    private func chatSuggestionButton(_ question: String) -> some View {
-        Button(question) {
-            useChatSuggestion(question)
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.regular)
-        .accessibilityHint("Adds this prompt to the Ask Kineto composer.")
-    }
-
-    private func chatTurn(_ turn: ChatTurnRecord) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            VStack(alignment: .leading, spacing: 8) {
-                Label("You", systemImage: "person.crop.circle.fill")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-
-                Text(turn.question)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .padding(12)
-            .background(.quaternary, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .accessibilityElement(children: .combine)
-
-            VStack(alignment: .leading, spacing: 10) {
-                if turn.outcome == .grounded {
-                    Label("Kineto · Grounded answer", systemImage: "checkmark.seal.fill")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.mint)
-
-                    Text(turn.answer)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                    if !turn.citations.isEmpty {
-                        HStack(spacing: 6) {
-                            ForEach(Array(turn.citations.enumerated()), id: \.offset) { index, citation in
-                                Button("Evidence \(index + 1)", systemImage: "doc.text.magnifyingglass") {
-                                    if let selection = model.citationSelection(for: citation) {
-                                        evidenceSelection = EvidenceSelection(
-                                            segment: selection.0,
-                                            supportingText: selection.1
-                                        )
-                                    }
-                                }
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
-                                .accessibilityHint("Opens the supporting finalized transcript excerpt.")
-                            }
-                        }
-                    }
-                } else {
-                    Label("Kineto · No grounded answer", systemImage: "questionmark.circle")
-                        .font(.caption.weight(.semibold))
-
-                    Text(model.chatNoAnswerDetail(turn))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    if !model.chatNoAnswerExcerpts(turn).isEmpty {
-                        Text("Related transcript excerpts — not an answer")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                    }
-
-                    if !turn.citations.isEmpty {
-                        HStack(spacing: 6) {
-                            ForEach(Array(turn.citations.enumerated()), id: \.offset) { index, citation in
-                                Button("Evidence \(index + 1)", systemImage: "doc.text.magnifyingglass") {
-                                    if let selection = model.citationSelection(for: citation) {
-                                        evidenceSelection = EvidenceSelection(
-                                            segment: selection.0,
-                                            supportingText: selection.1
-                                        )
-                                    }
-                                }
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
-                                .accessibilityHint("Opens a related finalized transcript excerpt.")
-                            }
-                        }
-                    }
-                }
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        }
-        .accessibilityElement(children: .contain)
-    }
-
-    private var meetingChatComposer: some View {
-        let chatDisabled = !model.canAskCurrentMeeting
-            || model.isGeneratingSummary
-            || model.isAnsweringChat
-        let questionIsEmpty = chatQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Label("Ask Kineto", systemImage: "bubble.left.and.text.bubble.right")
-                    .font(.headline)
-
-                Spacer(minLength: 8)
-
-                Label("On this Mac · Finalized transcript only", systemImage: "lock.fill")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-            }
-            .accessibilityElement(children: .combine)
-
-            ZStack(alignment: .topLeading) {
-                TextEditor(text: boundedChatQuestion)
-                    .font(.body)
-                    .focused($chatQuestionFocused)
-                    .scrollContentBackground(.hidden)
-                    .padding(4)
-                    .frame(height: chatEditorHeight)
-                    .background(.background, in: RoundedRectangle(cornerRadius: 6))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 6)
-                            .strokeBorder(.separator)
-                    }
-                    .disabled(chatDisabled)
-                    .accessibilityLabel("Ask this meeting")
-                    .accessibilityHint(
-                        "Type a question about this meeting’s finalized transcript. Return adds a line. Command-Return sends."
-                    )
-                    .accessibilityValue(chatQuestionAccessibilityValue)
-                    .onKeyPress(.return, phases: .down) { press in
-                        guard press.modifiers.contains(.command) else { return .ignored }
-                        submitChatQuestion()
-                        return .handled
-                    }
-
-                if chatQuestion.isEmpty {
-                    Text("Ask a question about this meeting")
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 12)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
-                }
-            }
-
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text("Return adds a line · ⌘↩ sends")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    Spacer(minLength: 8)
-
-                    Text("\(chatQuestion.count)/\(Self.chatQuestionLimit)")
-                        .font(.caption)
-                        .monospacedDigit()
-                        .foregroundStyle(
-                            chatQuestion.count == Self.chatQuestionLimit ? .orange : .secondary
-                        )
-                        .accessibilityLabel(chatQuestionAccessibilityValue)
-
-                    Button(model.isAnsweringChat ? "Sending" : "Send", systemImage: "paperplane.fill") {
-                        submitChatQuestion()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.mint)
-                    .disabled(chatDisabled || questionIsEmpty)
-                    .accessibilityLabel("Send question")
-                    .accessibilityHint("Searches this meeting’s finalized transcript.")
-                    .accessibilityValue(chatAvailabilityDescription)
-                }
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Return adds a line · ⌘↩ sends")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    HStack(spacing: 8) {
-                        Text("\(chatQuestion.count)/\(Self.chatQuestionLimit)")
-                            .font(.caption)
-                            .monospacedDigit()
-                            .foregroundStyle(
-                                chatQuestion.count == Self.chatQuestionLimit ? .orange : .secondary
-                            )
-                            .accessibilityLabel(chatQuestionAccessibilityValue)
-
-                        Button(model.isAnsweringChat ? "Sending" : "Send", systemImage: "paperplane.fill") {
-                            submitChatQuestion()
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.mint)
-                        .disabled(chatDisabled || questionIsEmpty)
-                        .accessibilityLabel("Send question")
-                        .accessibilityHint("Searches this meeting’s finalized transcript.")
-                        .accessibilityValue(chatAvailabilityDescription)
-                    }
-                }
-            }
-
-            if chatQuestion.count == Self.chatQuestionLimit {
-                Text("Limit reached")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-            }
-
-            if model.isAnsweringChat {
-                HStack(spacing: 8) {
-                    ProgressView()
-                    Text("Searching the finalized transcript…")
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            } else if model.isGeneratingSummary {
-                Text("Preparing the summary. Questions are available when it is complete.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else if !model.canAskCurrentMeeting {
-                Text("Questions become available when the finalized transcript is ready.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .onChange(of: model.isAnsweringChat) { _, isAnswering in
-            if isAnswering {
-                chatQuestionFocused = false
-            } else if model.errorMessage == nil {
-                submittedChatQuestion = nil
-            }
-        }
-    }
-
-    private var boundedChatQuestion: Binding<String> {
-        Binding(
-            get: { chatQuestion },
-            set: { chatQuestion = String($0.prefix(Self.chatQuestionLimit)) }
-        )
-    }
-
-    private var chatQuestionAccessibilityValue: String {
-        let count = chatQuestion.count
-        let limitReached = count == Self.chatQuestionLimit ? ", limit reached" : ""
-        return "\(count) of \(Self.chatQuestionLimit) characters\(limitReached)"
-    }
-
-    private var chatAvailabilityDescription: String {
-        if model.isAnsweringChat {
-            return "Searching the finalized transcript"
-        }
-        if model.isGeneratingSummary {
-            return "Preparing the summary"
-        }
-        if !model.canAskCurrentMeeting {
-            return "Finalized transcript unavailable"
-        }
-        return ""
-    }
-
-    private func useChatSuggestion(_ question: String) {
-        chatQuestion = question
-        reviewWorkspace = .ask
-        if model.canAskCurrentMeeting, !model.isGeneratingSummary, !model.isAnsweringChat {
-            chatQuestionFocused = true
-        }
-    }
-
-    private func submitChatQuestion() {
-        let question = chatQuestion
-        guard !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              model.canAskCurrentMeeting,
-              !model.isGeneratingSummary,
-              !model.isAnsweringChat else {
-            return
-        }
-
-        model.askCurrentMeeting(question: question)
-        guard model.isAnsweringChat else { return }
-
-        submittedChatQuestion = question
-        chatQuestion = ""
-        chatQuestionFocused = false
-    }
-
     private func dismissErrorAlert() {
         model.errorMessage = nil
-        guard let submittedChatQuestion else { return }
-        defer { self.submittedChatQuestion = nil }
-        guard chatQuestion.isEmpty else { return }
-        chatQuestion = submittedChatQuestion
-        if model.canAskCurrentMeeting, !model.isGeneratingSummary, !model.isAnsweringChat {
-            chatQuestionFocused = true
-        }
     }
 
     private var privacy: some View {
@@ -1334,7 +971,7 @@ struct HomeView: View {
                 privacyCard(
                     "Network",
                     icon: "network.slash",
-                    text: "The main app has no network entitlement. Local inference and Apple system language assets process meeting content."
+                    text: "The main app has no network entitlement. Capture, transcription, translation, and encrypted storage stay on this Mac. Optional Ask answers may send retrieved excerpts through an isolated helper after you allow it."
                 )
                 privacyCard(
                     "Deletion",
@@ -1449,12 +1086,6 @@ private struct TranscriptRow: View {
         let total = max(0, Int(seconds))
         return String(format: "%02d:%02d", total / 60, total % 60)
     }
-}
-
-private struct EvidenceSelection: Identifiable {
-    let id = UUID()
-    let segment: Segment
-    let supportingText: String
 }
 
 private struct EvidenceSheet: View {

@@ -29,6 +29,18 @@ enum CapturePresentationMode: Sendable, Equatable {
     case mainWindow
     case floating
 }
+
+struct PendingChatEgress: Identifiable, Equatable, Sendable {
+    let id: UUID
+    let provider: ChatProviderID
+    let question: String
+
+    init(id: UUID = UUID(), provider: ChatProviderID, question: String) {
+        self.id = id
+        self.provider = provider
+        self.question = question
+    }
+}
 enum PetDexCatalogStatus: Equatable, Sendable {
     case idle
     case loading
@@ -51,6 +63,7 @@ final class AppModel {
     }
     private static let petSettingsKey = "kineto.petSettings"
     private var isRestoringPetSettings = false
+    private var isRestoringChatSettings = false
 
     private struct PetSettingsSnapshot: Codable {
         static let currentVersion = 2
@@ -115,6 +128,20 @@ final class AppModel {
     private(set) var summary: SummaryRecord?
     private(set) var chatTurns: [ChatTurnRecord] = []
     private(set) var isAnsweringChat = false
+    var pendingChatEgress: PendingChatEgress?
+    var chatProvider: ChatProviderID = .appleOnDevice {
+        didSet {
+            guard !isRestoringChatSettings else { return }
+            ChatProviderPreferences.setDefaultProvider(chatProvider)
+        }
+    }
+    var alwaysAskBeforeEgress = false {
+        didSet {
+            guard !isRestoringChatSettings else { return }
+            ChatProviderPreferences.setAlwaysAskBeforeEgress(alwaysAskBeforeEgress)
+        }
+    }
+    private(set) var providerAccounts: [ChatProviderID: ChatProviderAccount] = [:]
     private(set) var translationReady = false
     private(set) var canRetryFinalization = false
     private(set) var processingStatus = "Finalizing locally"
@@ -198,19 +225,19 @@ final class AppModel {
     private let translationService = TranslationService(
         refiner: TranslationRefiner.foundationModels()
     )
-    private let summaryService = SummaryService()
-    private let chatService = MeetingChatService()
     private let meetingStore: MeetingPackageStore
     private let modelStore: ModelStore
     private let modelRoot: URL
     private let pickerObserver = ContentPickerObserver()
     private var activeMeeting: Meeting?
     private var coordinator: TranscriptCoordinator?
-    private var applePipeline: AppleSpeechMeetingPipeline?
+    private var applePipeline: AppleSpeechPipelineHandle?
     private var transcriptTask: Task<Void, Never>?
     private var translationTasks: [UUID: Task<Void, Never>] = [:]
     private var chatTask: Task<Void, Never>?
     private var chatRequestID: UUID?
+    private let accountStore = ChatProviderAccountStore()
+    private let chatEgress: any ChatEgressTransporting = ChatEgressXPCClient()
     private var preparedTranslationPairs: Set<String> = []
     private var recognizer: WhisperRecognizer?
     /// Optional second context so mic and selected-source do not serialize (L1).
@@ -265,6 +292,7 @@ final class AppModel {
             meetingScenario = scenario
         }
         restorePetSettings()
+        restoreChatSettings()
         configureContentSharingPicker()
 
         Task { [weak self] in
@@ -342,6 +370,7 @@ final class AppModel {
 
     func refreshCapabilities() async {
         await refreshMeetings()
+        await refreshChatAccounts()
         appleSpeechStatus = await appleSpeechCapability.status()
         recognitionLanguagePreference = appleSpeechStatus.normalizedPreference(
             recognitionLanguagePreference
@@ -427,7 +456,7 @@ final class AppModel {
         }
     }
 
-    func askCurrentMeeting(question: String) {
+    func askCurrentMeeting(question: String, egressConfirmed: Bool = false) {
         let trimmedQuestion = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuestion.isEmpty,
               let meeting = activeMeeting,
@@ -437,8 +466,16 @@ final class AppModel {
             return
         }
 
+        if chatProvider.sendsMeetingExcerptsOffDevice,
+           !egressConfirmed,
+           ChatProviderPreferences.shouldRequestConsent(for: chatProvider) {
+            pendingChatEgress = PendingChatEgress(provider: chatProvider, question: trimmedQuestion)
+            return
+        }
+
         let meetingID = meeting.id
         let language = summaryLanguage
+        let provider = chatProvider
         let requestID = UUID()
         isAnsweringChat = true
         chatRequestID = requestID
@@ -458,7 +495,9 @@ final class AppModel {
                     self.errorMessage = "Questions are available only after the meeting is stopped."
                     return
                 }
-                let turn = await self.chatService.answer(
+                let generator = await self.makeChatGenerator(egressAllowed: true)
+                let service = MeetingChatService(generator: generator, includePriorTurns: true)
+                let turn = await service.answer(
                     question: trimmedQuestion,
                     from: snapshot,
                     language: language
@@ -471,9 +510,26 @@ final class AppModel {
             } catch is CancellationError {
                 return
             } catch {
-                self.errorMessage = "The local answer could not be saved to the encrypted meeting."
+                self.errorMessage = provider.sendsMeetingExcerptsOffDevice
+                    ? "The answer could not be saved to the encrypted meeting."
+                    : "The local answer could not be saved to the encrypted meeting."
             }
         }
+    }
+
+    func confirmPendingChatEgress() {
+        guard let pending = pendingChatEgress else { return }
+        ChatProviderPreferences.setConsented(true, to: pending.provider)
+        pendingChatEgress = nil
+        askCurrentMeeting(question: pending.question, egressConfirmed: true)
+    }
+
+    func cancelPendingChatEgress() {
+        pendingChatEgress = nil
+    }
+
+    func stopCurrentChat() {
+        Task { await cancelChat() }
     }
 
     private func cancelChat() async {
@@ -499,13 +555,19 @@ final class AppModel {
     func chatNoAnswerDetail(_ turn: ChatTurnRecord) -> String {
         switch turn.noAnswerReason {
         case .modelUnavailable:
-            "Apple Intelligence is unavailable on this Mac."
+            "The on-this-Mac model is unavailable. Connect Grok, OpenAI, or Gemini, or use macOS 26 with Apple Intelligence."
         case .unsupportedLocale:
             "The selected answer language is unavailable on this Mac."
         case .noRelevantEvidence:
             "Kineto could not find enough support in the finalized transcript."
         case .invalidGeneratedEvidence, .generationFailed:
             "Kineto could not validate a grounded answer from the finalized transcript."
+        case .providerDisconnected:
+            "This AI provider is not connected. Open Settings to add an official API key."
+        case .userDeniedEgress:
+            "Retrieved excerpts were not sent because you declined."
+        case .remoteHTTPError:
+            "The AI provider refused or failed this request. Check the key or try again."
         case nil:
             "Kineto could not find a grounded answer in the finalized transcript."
         }
@@ -517,6 +579,90 @@ final class AppModel {
     }
     var canAskCurrentMeeting: Bool {
         isChatAvailable(for: activeMeeting)
+    }
+
+    var appleOnDeviceAvailable: Bool {
+        MeetingChatGeneratorFactory.appleOnDeviceIfAvailable().capability(for: summaryLanguage) != .unavailable
+    }
+
+    var selectedProviderConnected: Bool {
+        isProviderConnected(chatProvider)
+    }
+
+    var selectedProviderReady: Bool {
+        switch chatProvider {
+        case .appleOnDevice:
+            appleOnDeviceAvailable
+        case .grok, .openai, .gemini:
+            selectedProviderConnected
+        }
+    }
+
+    var hasConnectedRemoteProvider: Bool {
+        ChatProviderID.allCases.contains { $0.sendsMeetingExcerptsOffDevice && isProviderConnected($0) }
+    }
+
+    func isProviderConnected(_ provider: ChatProviderID) -> Bool {
+        if provider == .appleOnDevice { return appleOnDeviceAvailable }
+        return providerAccounts[provider]?.isConnected == true
+    }
+
+    func accountHint(for provider: ChatProviderID) -> String {
+        if provider == .appleOnDevice {
+            return appleOnDeviceAvailable ? "Available on this Mac" : "Unavailable on this Mac"
+        }
+        return providerAccounts[provider]?.displayHint ?? "Not connected"
+    }
+
+    func refreshChatAccounts() async {
+        var map: [ChatProviderID: ChatProviderAccount] = [:]
+        for account in await accountStore.accounts() {
+            map[account.provider] = account
+        }
+        providerAccounts = map
+    }
+
+    func connectChatProvider(_ provider: ChatProviderID, apiKey: String) async throws {
+        try await accountStore.saveAPIKey(apiKey, for: provider)
+        await refreshChatAccounts()
+        if !chatProvider.sendsMeetingExcerptsOffDevice {
+            chatProvider = provider
+        }
+    }
+
+    func disconnectChatProvider(_ provider: ChatProviderID) async {
+        try? await accountStore.deleteAPIKey(for: provider)
+        ChatProviderPreferences.setConsented(false, to: provider)
+        await refreshChatAccounts()
+        if chatProvider == provider {
+            chatProvider = appleOnDeviceAvailable ? .appleOnDevice : (ChatProviderID.allCases.first { $0.sendsMeetingExcerptsOffDevice && isProviderConnected($0) } ?? .appleOnDevice)
+        }
+    }
+
+    private func restoreChatSettings() {
+        isRestoringChatSettings = true
+        chatProvider = ChatProviderPreferences.defaultProvider()
+        alwaysAskBeforeEgress = ChatProviderPreferences.alwaysAskBeforeEgress()
+        isRestoringChatSettings = false
+    }
+
+    private func makeChatGenerator(egressAllowed: Bool) async -> any MeetingChatGenerating {
+        switch chatProvider {
+        case .appleOnDevice:
+            return MeetingChatGeneratorFactory.appleOnDeviceIfAvailable()
+        case .grok, .openai, .gemini:
+            let connected = await accountStore.isConnected(chatProvider)
+            let provider = chatProvider
+            return RemoteChatGenerator(
+                provider: provider,
+                transport: chatEgress,
+                isConnected: connected,
+                egressAllowed: egressAllowed,
+                resolveAPIKey: { [accountStore, provider] in
+                    try await accountStore.apiKey(for: provider)
+                }
+            )
+        }
     }
 
     var signalGatePresentation: SignalGatePresentation {
@@ -722,16 +868,20 @@ final class AppModel {
             let transcriptEvents: AsyncStream<TranscriptEvent>
 
             if useApple, let localeID = appleLocaleID {
-                let pipeline = AppleSpeechMeetingPipeline(
-                    meetingID: meeting.id,
-                    localeIdentifier: localeID,
-                    language: SpokenLanguage(localeIdentifier: localeID),
-                    capability: appleSpeechCapability,
-                    store: meetingStore
-                )
-                transcriptEvents = try await pipeline.start(events: captureEvents)
-                applePipeline = pipeline
-                coordinator = nil
+                if #available(macOS 26.0, *) {
+                    let pipeline = AppleSpeechMeetingPipeline(
+                        meetingID: meeting.id,
+                        localeIdentifier: localeID,
+                        language: SpokenLanguage(localeIdentifier: localeID),
+                        capability: appleSpeechCapability,
+                        store: meetingStore
+                    )
+                    transcriptEvents = try await pipeline.start(events: captureEvents)
+                    applePipeline = AppleSpeechPipelineHandle(pipeline)
+                    coordinator = nil
+                } else {
+                    throw SpeechRecognitionError.modelUnavailable
+                }
             } else {
                 activeASREngine = .whisper
                 guard let primary = recognizer else {
@@ -1113,7 +1263,11 @@ final class AppModel {
             processingStatus = "Finalizing locally"
         }
         do {
-            let generated = try await summaryService.generate(
+            let generator = await makeChatGenerator(egressAllowed: !chatProvider.sendsMeetingExcerptsOffDevice || ChatProviderPreferences.hasConsented(to: chatProvider))
+            let service = SummaryService(
+                remoteGenerator: chatProvider.sendsMeetingExcerptsOffDevice ? generator : nil
+            )
+            let generated = try await service.generate(
                 from: snapshot,
                 language: summaryLanguage,
                 template: summaryTemplate
